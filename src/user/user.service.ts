@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { BadRequestException, Injectable } from '@nestjs/common'
 import { PrismaService } from 'src/prisma.service'
 import { AuthDto } from '../auth/dto/auth.dto'
 import { UserDto } from './user.dto'
@@ -43,12 +43,15 @@ export class UserService {
 		}
 	}
 
-	async create(dto: AuthDto) {
+	async create(dto: UserDto) {
 		const user = {
 			email: dto.email,
-			name: '',
-			password: await hash(dto.password)
+			name: dto.name ?? '',
+			password: await hash(dto.password),
+			role: dto.role ?? 'USER'
 		}
+
+		if (!dto.password) throw new BadRequestException('Password is required')
 
 		return this.prisma.user.create({
 			data: user
@@ -66,6 +69,17 @@ export class UserService {
 			select: {
 				name: true,
 				email: true
+			}
+		})
+	}
+
+	findAll() {
+		return this.prisma.user.findMany({
+			select: {
+				id: true,
+				email: true,
+				role: true,
+				createdAt: true
 			}
 		})
 	}

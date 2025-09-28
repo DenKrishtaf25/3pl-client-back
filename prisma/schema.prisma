@@ -22,6 +22,8 @@ model User {
   name     String?
   password String
 
+  role     Role   @default(USER)
+
   clients            Client[]
 
   @@map("user")
@@ -57,4 +59,9 @@ model Inventory {
   clientId String @map("client_id")
 
   @@map("inventory")
+}
+
+enum Role {
+  USER
+  ADMIN
 }

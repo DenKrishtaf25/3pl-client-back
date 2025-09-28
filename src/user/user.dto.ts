@@ -1,12 +1,11 @@
 import {
 	IsEmail,
-	IsNumber,
 	IsOptional,
 	IsString,
-	Max,
-	Min,
 	MinLength
 } from 'class-validator'
+import { Role } from '@prisma/client'
+
 
 export class UserDto {
 	@IsEmail()
@@ -23,4 +22,7 @@ export class UserDto {
 	})
 	@IsString()
 	password?: string
+
+	@IsOptional()
+  	role?: Role
 }

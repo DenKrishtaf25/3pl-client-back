@@ -27,19 +27,6 @@ export class AuthController {
 		return response
 	}
 
-	@UsePipes(new ValidationPipe())
-	@HttpCode(200)
-	@Post('register')
-	async register(
-		@Body() dto: AuthDto,
-		@Res({ passthrough: true }) res: Response
-	) {
-		const { refreshToken, ...response } = await this.authService.register(dto)
-		this.authService.addRefreshTokenToResponse(res, refreshToken)
-
-		return response
-	}
-
 	@HttpCode(200)
 	@Post('login/access-token')
 	async getNewTokens(

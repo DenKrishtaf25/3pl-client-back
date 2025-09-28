@@ -31,22 +31,6 @@ export class AuthService {
 		}
 	}
 
-	async register(dto: AuthDto) {
-		const oldUser = await this.userService.getByEmail(dto.email)
-
-		if (oldUser) throw new BadRequestException('User already exists')
-
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		const { password, ...user } = await this.userService.create(dto)
-
-		const tokens = this.issueTokens(user.id)
-
-		return {
-			user,
-			...tokens
-		}
-	}
-
 	async getNewTokens(refreshToken: string) {
 		const result = await this.jwt.verifyAsync(refreshToken)
 		if (!result) throw new UnauthorizedException('Invalid refresh token')
@@ -94,9 +78,9 @@ export class AuthService {
 
 		res.cookie(this.REFRESH_TOKEN_NAME, refreshToken, {
 			httpOnly: true,
-			domain: 'localhost', //для продакшена домен из env забрать
+			domain: 'localhost', //для продакшена домен из env забрать. Закинуть этот кусок в гпт перед деплоем
 			expires: expiresIn,
-			secure: true,
+			secure: false, // тут true для прода
 			// lax if production
 			sameSite: 'none'
 		})
