@@ -44,17 +44,26 @@ export class UserService {
 	}
 
 	async create(dto: UserDto) {
+		if (!dto.password) throw new BadRequestException('Password is required')
+
+		const clients = await this.prisma.client.findMany({
+			where: { TIN: { in: dto.TINs } },
+			select: { id: true }
+		})
+
 		const user = {
 			email: dto.email,
 			name: dto.name ?? '',
 			password: await hash(dto.password),
-			role: dto.role ?? 'USER'
+			role: dto.role ?? 'USER',
+			clients: {
+        		connect: clients.map(c => ({ id: c.id }))
+      		}
 		}
 
-		if (!dto.password) throw new BadRequestException('Password is required')
-
 		return this.prisma.user.create({
-			data: user
+			data: user,
+			include: { clients: true }
 		})
 	}
 
@@ -77,9 +86,13 @@ export class UserService {
 		return this.prisma.user.findMany({
 			select: {
 				id: true,
+				createdAt: true,
+				updatedAt: true,
 				email: true,
+				name: true,
+				password: true,
 				role: true,
-				createdAt: true
+				clients: true
 			}
 		})
 	}
