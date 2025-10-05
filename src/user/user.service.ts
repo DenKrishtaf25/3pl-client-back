@@ -31,41 +31,49 @@ export class UserService {
 			throw new Error('User not found');
 		}
 
-		const totalClients= profile.clients.length
-		
+		const totalClients = profile.clients.length
+
 		const { password, ...rest } = profile
 
 		return {
 			user: rest,
 			statistics: [
-				{label: 'Total', value: totalClients},
+				{ label: 'Total', value: totalClients },
 			]
 		}
 	}
 
 	async create(dto: UserDto) {
 		if (!dto.password) throw new BadRequestException('Password is required')
+		if (!dto.TINs || dto.TINs.length === 0) {
+			throw new BadRequestException('At least one TIN must be provided')
+		}
 
 		const clients = await this.prisma.client.findMany({
 			where: { TIN: { in: dto.TINs } },
-			select: { id: true }
+			select: { id: true },
 		})
 
-		const user = {
-			email: dto.email,
-			name: dto.name ?? '',
-			password: await hash(dto.password),
-			role: dto.role ?? 'USER',
-			clients: {
-        		connect: clients.map(c => ({ id: c.id }))
-      		}
+		if (clients.length === 0) {
+			throw new BadRequestException('No clients found for provided TINs')
 		}
 
-		return this.prisma.user.create({
-			data: user,
-			include: { clients: true }
+		const user = await this.prisma.user.create({
+			data: {
+				email: dto.email,
+				name: dto.name ?? '',
+				password: await hash(dto.password),
+				role: dto.role ?? 'USER',
+				clients: {
+					connect: clients.map((c) => ({ id: c.id })),
+				},
+			},
+			include: { clients: true },
 		})
+
+		return user
 	}
+
 
 	async update(id: string, dto: UserDto) {
 		let data = dto

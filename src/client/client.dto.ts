@@ -1,15 +1,13 @@
-import { IsNotEmpty, IsString } from 'class-validator'
+import { IsString, IsArray, IsOptional } from 'class-validator'
 
 export class ClientDto {
-    @IsNotEmpty()
-    @IsString()
-    TIN: string
+  @IsString()
+  TIN: string
 
-    @IsNotEmpty()
-    @IsString()
-    companyName: string
+  @IsString()
+  companyName: string
 
-    @IsNotEmpty()
-    @IsString()
-    userId: string
+  @IsOptional()
+  @IsArray()
+  userIds?: string[]
 }
