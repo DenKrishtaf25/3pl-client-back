@@ -4,18 +4,19 @@ import {
 	IsString,
 	MinLength,
 	IsArray,
-	IsNotEmpty
+	IsNotEmpty,
+	IsEnum
 } from 'class-validator'
 import { Role } from '@prisma/client'
 
 
 export class UserDto {
-	@IsEmail()
 	@IsOptional()
+	@IsEmail()
 	email?: string
 
-	@IsString()
 	@IsOptional()
+	@IsString()
 	name?: string
 
 	@IsOptional()
@@ -25,10 +26,12 @@ export class UserDto {
 	@IsString()
 	password?: string
 
+	@IsOptional()
 	@IsArray()
   	@IsNotEmpty({ each: true })
   	TINs: string[]
 
 	@IsOptional()
+	@IsEnum(Role)
   	role?: Role
 }

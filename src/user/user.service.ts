@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import { PrismaService } from 'src/prisma.service'
-import { AuthDto } from '../auth/dto/auth.dto'
 import { UserDto } from './user.dto'
 import { hash } from 'argon2'
 
@@ -90,6 +89,48 @@ export class UserService {
 		})
 	}
 
+	async fullUpdate(id: string, dto: UserDto) {
+		const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
+		if (existingUser && existingUser.id !== id) {
+			throw new BadRequestException('Email уже используется');
+		}
+
+		let clientsConnect = undefined;
+		if (dto.TINs && dto.TINs.length) {
+			const clients = await this.prisma.client.findMany({
+				where: { TIN: { in: dto.TINs } },
+				select: { id: true },
+			});
+
+			if (!clients.length) {
+				throw new BadRequestException('Нет клиентов для указанных TIN');
+			}
+
+			clientsConnect = clients.map(c => ({ id: c.id }));
+		}
+
+		const data: any = {
+			email: dto.email,
+			name: dto.name
+		};
+
+		if (dto.password) {
+			data.password = await hash(dto.password);
+		}
+
+		if (clientsConnect) {
+			data.clients = {
+				set: clientsConnect,
+			};
+		}
+
+		return this.prisma.user.update({
+			where: { id },
+			data,
+			include: { clients: true },
+		});
+	}
+
 	findAll() {
 		return this.prisma.user.findMany({
 			select: {
@@ -103,5 +144,11 @@ export class UserService {
 				clients: true
 			}
 		})
+	}
+
+	async remove(id: string) {
+		return this.prisma.user.delete({
+			where: { id },
+		});
 	}
 }

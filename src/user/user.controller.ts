@@ -1,8 +1,10 @@
 import {
 	Body,
 	Controller,
+	Delete,
 	Get,
 	HttpCode,
+	Param,
 	Post,
 	Put,
 	UseGuards,
@@ -51,6 +53,18 @@ export class AdminUsersController {
   @Roles('ADMIN')
   async create(@Body() dto: UserDto) {
     return this.userService.create(dto)
+  }
+
+  @Put(':id')
+  @Roles('ADMIN')
+  async update(@Param('id') id: string, @Body() dto: UserDto) {
+    return this.userService.fullUpdate(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles('ADMIN')
+  async remove(@Param('id') id: string) {
+    return this.userService.remove(id);
   }
 }
 
