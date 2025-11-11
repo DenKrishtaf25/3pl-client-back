@@ -1,0 +1,203 @@
+import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common'
+import { PrismaService } from 'src/prisma.service'
+import { StockDto, UpdateStockDto } from './stock.dto'
+
+@Injectable()
+export class StockService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  private async getUserClientTINs(userId: string): Promise<string[]> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { clients: { select: { TIN: true } } }
+    })
+
+    return user?.clients?.map(client => client.TIN) || []
+  }
+
+  async findAll(userId: string, userRole: string, clientTINFilter?: string) {
+    // Получаем список клиентов пользователя
+    const userClientTINs = await this.getUserClientTINs(userId)
+
+    // Парсим фильтр clientTIN (может быть строка с запятыми или одно значение)
+    let requestedTINs: string[] = []
+    if (clientTINFilter) {
+      requestedTINs = clientTINFilter.split(',').map(tin => tin.trim()).filter(Boolean)
+    }
+
+    // Определяем финальный список TIN для фильтрации
+    let finalTINs: string[] = []
+
+    if (userRole === 'ADMIN') {
+      // Админ может видеть любые Stock
+      if (requestedTINs.length > 0) {
+        // Если указан фильтр - используем его
+        finalTINs = requestedTINs
+      } else {
+        // Если фильтр не указан - показываем все
+        return this.prisma.stock.findMany({
+          include: { client: true },
+          orderBy: { createdAt: 'desc' }
+        })
+      }
+    } else {
+      // Обычный пользователь
+      if (userClientTINs.length === 0) {
+        return []
+      }
+
+      if (requestedTINs.length > 0) {
+        // Проверяем, что запрашиваемые TIN доступны пользователю
+        const allowedTINs = requestedTINs.filter(tin => userClientTINs.includes(tin))
+        
+        if (allowedTINs.length === 0) {
+          throw new ForbiddenException('Access denied to the requested clients')
+        }
+        
+        finalTINs = allowedTINs
+      } else {
+        // Если фильтр не указан - показываем все Stock клиентов пользователя
+        finalTINs = userClientTINs
+      }
+    }
+
+    return this.prisma.stock.findMany({
+      where: {
+        clientTIN: {
+          in: finalTINs
+        }
+      },
+      include: { client: true },
+      orderBy: { createdAt: 'desc' }
+    })
+  }
+
+  async findOne(id: string, userId: string, userRole: string) {
+    const stock = await this.prisma.stock.findUnique({
+      where: { id },
+      include: { client: true }
+    })
+
+    if (!stock) {
+      throw new NotFoundException('Stock not found')
+    }
+
+    // Админ может видеть все Stock
+    if (userRole === 'ADMIN') {
+      return stock
+    }
+
+    // Обычный пользователь может видеть только Stock своих клиентов
+    const clientTINs = await this.getUserClientTINs(userId)
+
+    if (clientTINs.length === 0 || !clientTINs.includes(stock.clientTIN)) {
+      throw new ForbiddenException('Access denied to this stock')
+    }
+
+    return stock
+  }
+
+  async create(dto: StockDto, userId: string, userRole: string) {
+    // Админ может создавать Stock для любого клиента
+    if (userRole !== 'ADMIN') {
+      const clientTINs = await this.getUserClientTINs(userId)
+
+      if (!clientTINs.includes(dto.clientTIN)) {
+        throw new ForbiddenException('Access denied to create stock for this client')
+      }
+    }
+
+    // Проверяем существование клиента
+    const client = await this.prisma.client.findUnique({
+      where: { TIN: dto.clientTIN }
+    })
+
+    if (!client) {
+      throw new NotFoundException('Client with this TIN not found')
+    }
+
+    return this.prisma.stock.create({
+      data: {
+        warehouse: dto.warehouse,
+        nomenclature: dto.nomenclature,
+        article: dto.article,
+        quantity: dto.quantity,
+        clientTIN: dto.clientTIN
+      },
+      include: { client: true }
+    })
+  }
+
+  async update(id: string, dto: UpdateStockDto, userId: string, userRole: string) {
+    const stock = await this.prisma.stock.findUnique({
+      where: { id }
+    })
+
+    if (!stock) {
+      throw new NotFoundException('Stock not found')
+    }
+
+    // Админ может обновлять любой Stock
+    if (userRole !== 'ADMIN') {
+      const clientTINs = await this.getUserClientTINs(userId)
+
+      if (!clientTINs.includes(stock.clientTIN)) {
+        throw new ForbiddenException('Access denied to update this stock')
+      }
+
+      // Если пытаются изменить clientTIN, проверяем доступ к новому клиенту
+      if (dto.clientTIN && dto.clientTIN !== stock.clientTIN) {
+        if (!clientTINs.includes(dto.clientTIN)) {
+          throw new ForbiddenException('Access denied to assign stock to this client')
+        }
+      }
+    }
+
+    // Если пытаются изменить clientTIN, проверяем существование нового клиента
+    if (dto.clientTIN && dto.clientTIN !== stock.clientTIN) {
+      const newClient = await this.prisma.client.findUnique({
+        where: { TIN: dto.clientTIN }
+      })
+
+      if (!newClient) {
+        throw new NotFoundException('Client with this TIN not found')
+      }
+    }
+
+    return this.prisma.stock.update({
+      where: { id },
+      data: {
+        ...(dto.warehouse && { warehouse: dto.warehouse }),
+        ...(dto.nomenclature && { nomenclature: dto.nomenclature }),
+        ...(dto.article && { article: dto.article }),
+        ...(dto.quantity !== undefined && { quantity: dto.quantity }),
+        ...(dto.clientTIN && { clientTIN: dto.clientTIN })
+      },
+      include: { client: true }
+    })
+  }
+
+  async remove(id: string, userId: string, userRole: string) {
+    const stock = await this.prisma.stock.findUnique({
+      where: { id }
+    })
+
+    if (!stock) {
+      throw new NotFoundException('Stock not found')
+    }
+
+    // Админ может удалять любой Stock
+    if (userRole !== 'ADMIN') {
+      const clientTINs = await this.getUserClientTINs(userId)
+
+      if (!clientTINs.includes(stock.clientTIN)) {
+        throw new ForbiddenException('Access denied to delete this stock')
+      }
+    }
+
+    return this.prisma.stock.delete({
+      where: { id },
+      include: { client: true }
+    })
+  }
+}

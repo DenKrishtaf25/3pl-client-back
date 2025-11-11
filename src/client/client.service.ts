@@ -8,7 +8,7 @@ export class ClientService {
 
   async findAll() {
     return this.prisma.client.findMany({
-      include: { users: true, inventories: true }
+      include: { users: true, stocks: true }
     })
   }
 

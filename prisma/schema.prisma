@@ -22,43 +22,42 @@ model User {
   name     String?
   password String
 
-  role     Role   @default(USER)
+  role Role @default(USER)
 
-  clients  Client[] @relation("UserClients")
+  clients Client[] @relation("UserClients")
 
   @@map("user")
 }
 
 model Client {
-  id           String   @id @default(cuid())
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  TIN          String  @unique
-  companyName  String
-
-  inventories  Inventory[]
-
-  users        User[]   @relation("UserClients")
-
-  @@map("client")
-}
-
-model Inventory {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  city         String
+  TIN         String @unique
+  companyName String
+
+  stocks Stock[]
+
+  users User[] @relation("UserClients")
+
+  @@map("client")
+}
+
+model Stock {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  warehouse    String
   nomenclature String
   article      String
-  warehouse    String
   quantity     Int
 
-  client   Client @relation(fields: [clientId], references: [id])
-  clientId String @map("client_id")
+  client   Client @relation(fields: [clientTIN], references: [TIN])
+  clientTIN String @map("client_tin")
 
-  @@map("inventory")
+  @@map("stock")
 }
 
 enum Role {
