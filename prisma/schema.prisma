@@ -37,7 +37,8 @@ model Client {
   TIN         String @unique
   companyName String
 
-  stocks Stock[]
+  stocks     Stock[]
+  registries Registry[]
 
   users User[] @relation("UserClients")
 
@@ -58,6 +59,31 @@ model Stock {
   clientTIN String @map("client_tin")
 
   @@map("stock")
+}
+
+model Registry {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branch           String
+  orderType        String   @map("order_type")
+  orderNumber      String   @map("order_number")
+  kisNumber        String   @map("kis_number")
+  unloadingDate    DateTime @map("unloading_date")
+  status           String
+  counterparty     String
+  acceptanceDate   DateTime @map("acceptance_date")
+  shipmentPlan     DateTime @map("shipment_plan")
+  packagesPlanned  Int      @map("packages_planned")
+  packagesActual   Int      @map("packages_actual")
+  linesPlanned     Int      @map("lines_planned")
+  linesActual      Int      @map("lines_actual")
+
+  client    Client @relation(fields: [clientTIN], references: [TIN])
+  clientTIN String @map("client_tin")
+
+  @@map("registry")
 }
 
 enum Role {
