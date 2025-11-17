@@ -11,13 +11,13 @@ import {
 	UsePipes,
 	ValidationPipe
 } from '@nestjs/common'
-import { Auth } from 'src/auth/decorators/auth.decorator'
-import { CurrentUser } from 'src/auth/decorators/user.decorator'
+import { Auth } from '../auth/decorators/auth.decorator'
+import { CurrentUser } from '../auth/decorators/user.decorator'
 import { UserDto } from './user.dto'
 import { UserService } from './user.service'
-import { Roles } from 'src/auth/decorators/roles.decorator'
-import { JwtAuthGuard } from 'src/auth/guards/jwt.guard'
-import { RolesGuard } from 'src/auth/guards/roles.guard'
+import { Roles } from '../auth/decorators/roles.decorator'
+import { JwtAuthGuard } from '../auth/guards/jwt.guard'
+import { RolesGuard } from '../auth/guards/roles.guard'
 
 @Controller('user/profile')
 export class UserController {

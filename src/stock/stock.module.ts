@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common'
 import { StockService } from './stock.service'
 import { UserStockController, AdminStockController } from './stock.controller'
-import { PrismaService } from 'src/prisma.service'
+import { PrismaService } from '../prisma.service'
 
 @Module({
   controllers: [UserStockController, AdminStockController],

@@ -7,7 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt'
 import { verify } from 'argon2'
 import { Response } from 'express'
-import { UserService } from 'src/user/user.service'
+import { UserService } from '../user/user.service'
 import { AuthDto } from './dto/auth.dto'
 
 @Injectable()

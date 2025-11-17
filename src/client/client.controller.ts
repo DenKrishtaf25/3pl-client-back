@@ -1,9 +1,9 @@
 import { Body, Controller, Get, Param, Post, Put, Delete, UseGuards } from '@nestjs/common'
 import { ClientService } from './client.service'
 import { ClientDto } from './client.dto'
-import { JwtAuthGuard } from 'src/auth/guards/jwt.guard'
-import { RolesGuard } from 'src/auth/guards/roles.guard'
-import { Roles } from 'src/auth/decorators/roles.decorator'
+import { JwtAuthGuard } from '../auth/guards/jwt.guard'
+import { RolesGuard } from '../auth/guards/roles.guard'
+import { Roles } from '../auth/decorators/roles.decorator'
 
 @Controller('admin/clients')
 @UseGuards(JwtAuthGuard, RolesGuard)
