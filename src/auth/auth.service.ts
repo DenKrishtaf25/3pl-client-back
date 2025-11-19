@@ -4,6 +4,7 @@ import {
 	NotFoundException,
 	UnauthorizedException
 } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import { verify } from 'argon2'
 import { Response } from 'express'
@@ -17,7 +18,8 @@ export class AuthService {
 
 	constructor(
 		private jwt: JwtService,
-		private userService: UserService
+		private userService: UserService,
+		private configService: ConfigService
 	) {}
 
 	async login(dto: AuthDto) {
@@ -76,24 +78,30 @@ export class AuthService {
 		const expiresIn = new Date()
 		expiresIn.setDate(expiresIn.getDate() + this.EXPIRE_DAY_REFRESH_TOKEN)
 
+		const cookieDomain = this.configService.get<string>('COOKIE_DOMAIN', 'localhost')
+		const cookieSecure = this.configService.get<string>('COOKIE_SECURE', 'false') === 'true'
+		const cookieSameSite = this.configService.get<string>('COOKIE_SAME_SITE', 'none') as 'none' | 'lax' | 'strict'
+
 		res.cookie(this.REFRESH_TOKEN_NAME, refreshToken, {
 			httpOnly: true,
-			domain: 'localhost', //для продакшена домен из env забрать. Закинуть этот кусок в гпт перед деплоем
+			domain: cookieDomain,
 			expires: expiresIn,
-			secure: false, // тут true для прода
-			// lax if production
-			sameSite: 'none'
+			secure: cookieSecure,
+			sameSite: cookieSameSite
 		})
 	}
 
 	removeRefreshTokenFromResponse(res: Response) {
+		const cookieDomain = this.configService.get<string>('COOKIE_DOMAIN', 'localhost')
+		const cookieSecure = this.configService.get<string>('COOKIE_SECURE', 'false') === 'true'
+		const cookieSameSite = this.configService.get<string>('COOKIE_SAME_SITE', 'none') as 'none' | 'lax' | 'strict'
+
 		res.cookie(this.REFRESH_TOKEN_NAME, '', {
 			httpOnly: true,
-			domain: 'localhost',
+			domain: cookieDomain,
 			expires: new Date(0),
-			secure: true,
-			// lax if production
-			sameSite: 'none'
+			secure: cookieSecure,
+			sameSite: cookieSameSite
 		})
 	}
 }

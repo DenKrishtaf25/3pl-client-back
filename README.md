@@ -32,6 +32,47 @@
 $ npm install
 ```
 
+## Environment Variables
+
+Create a `.env` file in the root directory with the following variables:
+
+```env
+# Server Configuration
+PORT=4200
+NODE_ENV=development
+
+# Frontend URL (for CORS)
+# Можно указать несколько URLs через запятую: http://localhost:3000,http://localhost:3001
+FRONTEND_URL=http://localhost:3000
+
+# Cookie Configuration
+COOKIE_DOMAIN=localhost
+COOKIE_SECURE=false
+COOKIE_SAME_SITE=none
+```
+
+### Production Configuration
+
+For production deployment, use these settings:
+
+```env
+PORT=4200
+NODE_ENV=production
+FRONTEND_URL=http://www.3pl-test.ru
+COOKIE_DOMAIN=.3pl-test.ru
+COOKIE_SECURE=true
+COOKIE_SAME_SITE=none
+```
+
+**Note:** 
+- `COOKIE_DOMAIN` should start with a dot (`.3pl-test.ru`) to work across subdomains
+- `COOKIE_SECURE` must be `true` in production (HTTPS required)
+- `FRONTEND_URL` should match **exactly** your frontend domain for CORS (without trailing slash)
+  - **Important:** `www.` matters! `http://www.3pl-test.ru` and `http://3pl-test.ru` are different origins
+  - Check your frontend origin in browser console: `console.log(window.location.origin)`
+  - To support both, use: `FRONTEND_URL=http://www.3pl-test.ru,http://3pl-test.ru`
+- You can specify multiple frontend URLs separated by commas: `http://www.3pl-test.ru,http://admin.3pl-test.ru`
+
 ## Compile and run the project
 
 ```bash
