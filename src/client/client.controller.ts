@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Param, Post, Put, Delete, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Param, Post, Put, Delete, UseGuards, Query, UsePipes, ValidationPipe } from '@nestjs/common'
 import { ClientService } from './client.service'
-import { ClientDto } from './client.dto'
+import { ClientDto, FindClientsDto } from './client.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
@@ -12,7 +12,13 @@ export class AdminClientsController {
 
   @Get()
   @Roles('ADMIN')
-  async findAll() {
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async findAll(@Query() query: FindClientsDto) {
+    // Если переданы параметры фильтрации - используем новый метод
+    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder) {
+      return this.clientService.findAllWithPagination(query)
+    }
+    // Для обратной совместимости - старый метод без фильтрации
     return this.clientService.findAll()
   }
 
