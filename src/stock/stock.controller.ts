@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, UsePipes, ValidationPipe, Query } from '@nestjs/common'
 import { StockService } from './stock.service'
-import { StockDto, UpdateStockDto } from './stock.dto'
+import { StockDto, UpdateStockDto, FindStockDto } from './stock.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
@@ -13,12 +13,18 @@ export class UserStockController {
 
   @Get()
   @Auth()
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async findAll(
     @CurrentUser('id') userId: string,
     @CurrentUser('role') userRole: string,
-    @Query('clientTIN') clientTIN?: string
+    @Query() query: FindStockDto
   ) {
-    return this.stockService.findAll(userId, userRole, clientTIN)
+    // Если переданы параметры фильтрации/пагинации - используем новый метод
+    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder) {
+      return this.stockService.findAllWithPagination(query, userId, userRole)
+    }
+    // Для обратной совместимости - старый метод
+    return this.stockService.findAll(userId, userRole, query.clientTIN)
   }
 
   @Get(':id')
@@ -35,12 +41,18 @@ export class AdminStockController {
 
   @Get()
   @Roles('ADMIN')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async findAll(
     @CurrentUser('id') userId: string,
     @CurrentUser('role') userRole: string,
-    @Query('clientTIN') clientTIN?: string
+    @Query() query: FindStockDto
   ) {
-    return this.stockService.findAll(userId, userRole, clientTIN)
+    // Если переданы параметры фильтрации/пагинации - используем новый метод
+    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder) {
+      return this.stockService.findAllWithPagination(query, userId, userRole)
+    }
+    // Для обратной совместимости - старый метод
+    return this.stockService.findAll(userId, userRole, query.clientTIN)
   }
 
   @Get(':id')

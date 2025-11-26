@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
-import { StockDto, UpdateStockDto } from './stock.dto'
+import { StockDto, UpdateStockDto, FindStockDto } from './stock.dto'
+import { Prisma } from '@prisma/client'
 
 @Injectable()
 export class StockService {
@@ -70,6 +71,130 @@ export class StockService {
       include: { client: true },
       orderBy: { createdAt: 'desc' }
     })
+  }
+
+  async findAllWithPagination(dto: FindStockDto, userId: string, userRole: string) {
+    const page = dto.page || 1
+    const limit = Math.min(dto.limit || 20, 50) // Максимум 50 записей
+    const skip = (page - 1) * limit
+
+    // Получаем список клиентов пользователя
+    const userClientTINs = await this.getUserClientTINs(userId)
+
+    // Парсим фильтр clientTIN (может быть строка с запятыми или одно значение)
+    let requestedTINs: string[] = []
+    if (dto.clientTIN) {
+      requestedTINs = dto.clientTIN.split(',').map(tin => tin.trim()).filter(Boolean)
+    }
+
+    // Определяем финальный список TIN для фильтрации
+    let allowedTINs: string[] = []
+
+    if (userRole === 'ADMIN') {
+      // Админ может видеть любые Stock
+      allowedTINs = requestedTINs.length > 0 ? requestedTINs : [] // Пустой массив = все клиенты
+    } else {
+      // Обычный пользователь
+      if (userClientTINs.length === 0) {
+        return {
+          data: [],
+          meta: {
+            total: 0,
+            page,
+            limit,
+            totalPages: 0,
+          }
+        }
+      }
+
+      if (requestedTINs.length > 0) {
+        // Проверяем, что запрашиваемые TIN доступны пользователю
+        const filteredTINs = requestedTINs.filter(tin => userClientTINs.includes(tin))
+        
+        if (filteredTINs.length === 0) {
+          throw new ForbiddenException('Access denied to the requested clients')
+        }
+        
+        allowedTINs = filteredTINs
+      } else {
+        // Если фильтр не указан - показываем все Stock клиентов пользователя
+        allowedTINs = userClientTINs
+      }
+    }
+
+    // Формируем условия поиска
+    const where: Prisma.StockWhereInput = {}
+    
+    // Фильтр по клиентам
+    if (allowedTINs.length > 0) {
+      where.clientTIN = { in: allowedTINs }
+    } else if (userRole !== 'ADMIN') {
+      // Для не-админа без клиентов - пустой результат
+      return {
+        data: [],
+        meta: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        }
+      }
+    }
+
+    // Поиск по складу и номенклатуре
+    if (dto.search) {
+      const searchTerm = dto.search.trim()
+      where.OR = [
+        { warehouse: { contains: searchTerm, mode: 'insensitive' } },
+        { nomenclature: { contains: searchTerm, mode: 'insensitive' } },
+      ]
+    }
+
+    // Формируем сортировку
+    const orderBy: Prisma.StockOrderByWithRelationInput = {}
+    if (dto.sortBy === 'quantity') {
+      orderBy.quantity = dto.sortOrder || 'asc'
+    } else {
+      orderBy.article = dto.sortOrder || 'asc'
+    }
+
+    // Получаем общее количество записей (для пагинации)
+    const total = await this.prisma.stock.count({ where })
+
+    // Получаем данные
+    const stocks = await this.prisma.stock.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy,
+      select: {
+        id: true,
+        warehouse: true,
+        nomenclature: true,
+        article: true,
+        quantity: true,
+        clientTIN: true,
+        createdAt: true,
+        updatedAt: true,
+        client: {
+          select: {
+            id: true,
+            TIN: true,
+            companyName: true,
+          }
+        }
+      }
+    })
+
+    return {
+      data: stocks,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      }
+    }
   }
 
   async findOne(id: string, userId: string, userRole: string) {
