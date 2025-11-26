@@ -20,6 +20,8 @@
         "test:e2e": "jest --config ./test/jest-e2e.json",
         "import:clients": "ts-node prisma/import-clients.ts",
         "import:clients:prod": "node dist/prisma/import-clients.js",
+        "import:stock": "ts-node prisma/import-stock.ts",
+        "import:stock:prod": "node dist/prisma/import-stock.js",
         "build:import": "tsc prisma/import-clients.ts --outDir dist/prisma --module commonjs --target ES2021 --esModuleInterop --resolveJsonModule --skipLibCheck"
     },
     "dependencies": {
