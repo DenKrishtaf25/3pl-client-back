@@ -1,4 +1,5 @@
-import { IsString, IsNumber, IsOptional, IsDateString } from 'class-validator'
+import { IsString, IsNumber, IsOptional, IsDateString, IsInt, Min, Max, IsEnum } from 'class-validator'
+import { Type } from 'class-transformer'
 
 export class RegistryDto {
   @IsString()
@@ -96,6 +97,37 @@ export class UpdateRegistryDto {
   @IsOptional()
   @IsNumber()
   linesActual?: number
+
+  @IsOptional()
+  @IsString()
+  clientTIN?: string
+}
+
+export class FindRegistryDto {
+  @IsOptional()
+  @IsString()
+  search?: string
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit?: number
+
+  @IsOptional()
+  @IsEnum(['orderNumber', 'acceptanceDate', 'unloadingDate'])
+  sortBy?: 'orderNumber' | 'acceptanceDate' | 'unloadingDate'
+
+  @IsOptional()
+  @IsEnum(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc'
 
   @IsOptional()
   @IsString()
