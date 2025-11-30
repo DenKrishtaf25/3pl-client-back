@@ -132,5 +132,17 @@ export class FindRegistryDto {
   @IsOptional()
   @IsString()
   clientTIN?: string
+
+  @IsOptional()
+  @IsDateString()
+  dateFrom?: string
+
+  @IsOptional()
+  @IsDateString()
+  dateTo?: string
+
+  @IsOptional()
+  @IsEnum(['acceptanceDate', 'unloadingDate', 'shipmentPlan'])
+  dateField?: 'acceptanceDate' | 'unloadingDate' | 'shipmentPlan'
 }
 

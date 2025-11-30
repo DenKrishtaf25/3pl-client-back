@@ -150,6 +150,37 @@ export class RegistryService {
       ]
     }
 
+    // Фильтрация по дате
+    if (dto.dateFrom || dto.dateTo) {
+      // По умолчанию фильтруем по acceptanceDate (дата приемки), если не указано поле
+      const dateField = dto.dateField || 'acceptanceDate'
+      
+      const dateFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.dateFrom) {
+        // Начало дня для dateFrom
+        const dateFrom = new Date(dto.dateFrom)
+        dateFrom.setHours(0, 0, 0, 0)
+        dateFilter.gte = dateFrom
+      }
+      
+      if (dto.dateTo) {
+        // Конец дня для dateTo
+        const dateTo = new Date(dto.dateTo)
+        dateTo.setHours(23, 59, 59, 999)
+        dateFilter.lte = dateTo
+      }
+      
+      // Применяем фильтр к выбранному полю даты
+      if (dateField === 'acceptanceDate') {
+        where.acceptanceDate = dateFilter
+      } else if (dateField === 'unloadingDate') {
+        where.unloadingDate = dateFilter
+      } else if (dateField === 'shipmentPlan') {
+        where.shipmentPlan = dateFilter
+      }
+    }
+
     // Формируем сортировку
     const orderBy: Prisma.RegistryOrderByWithRelationInput = {}
     if (dto.sortBy === 'acceptanceDate') {
