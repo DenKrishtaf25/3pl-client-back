@@ -191,6 +191,8 @@ export class RegistryService {
       orderBy.acceptanceDate = dto.sortOrder || 'desc'
     } else if (dto.sortBy === 'unloadingDate') {
       orderBy.unloadingDate = dto.sortOrder || 'desc'
+    } else if (dto.sortBy === 'shipmentPlan') {
+      orderBy.shipmentPlan = dto.sortOrder || 'desc'
     } else {
       orderBy.orderNumber = dto.sortOrder || 'asc'
     }

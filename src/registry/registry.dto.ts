@@ -122,8 +122,8 @@ export class FindRegistryDto {
   limit?: number
 
   @IsOptional()
-  @IsEnum(['orderNumber', 'acceptanceDate', 'unloadingDate'])
-  sortBy?: 'orderNumber' | 'acceptanceDate' | 'unloadingDate'
+  @IsEnum(['orderNumber', 'acceptanceDate', 'unloadingDate', 'shipmentPlan'])
+  sortBy?: 'orderNumber' | 'acceptanceDate' | 'unloadingDate' | 'shipmentPlan'
 
   @IsOptional()
   @IsEnum(['asc', 'desc'])
