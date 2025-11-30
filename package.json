@@ -24,6 +24,8 @@
         "import:stock:prod": "node dist/prisma/import-stock.js",
         "import:registry": "ts-node prisma/import-registry.ts",
         "import:registry:prod": "node dist/prisma/import-registry.js",
+        "import:orders": "ts-node prisma/import-orders.ts",
+        "import:orders:prod": "node dist/prisma/import-orders.js",
         "build:import": "tsc prisma/import-clients.ts --outDir dist/prisma --module commonjs --target ES2021 --esModuleInterop --resolveJsonModule --skipLibCheck"
     },
     "dependencies": {

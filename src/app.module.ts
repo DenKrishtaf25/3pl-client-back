@@ -5,6 +5,7 @@ import { UserModule } from './user/user.module'
 import { ClientModule } from './client/client.module'
 import { StockModule } from './stock/stock.module'
 import { RegistryModule } from './registry/registry.module'
+import { OrderModule } from './order/order.module'
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { RegistryModule } from './registry/registry.module'
     ClientModule,
     StockModule,
     RegistryModule,
+    OrderModule,
   ],
 })
 export class AppModule {}
