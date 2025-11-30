@@ -158,26 +158,30 @@ export class RegistryService {
       const dateFilter: { gte?: Date; lte?: Date } = {}
       
       if (dto.dateFrom) {
-        // Начало дня для dateFrom
-        const dateFrom = new Date(dto.dateFrom)
-        dateFrom.setHours(0, 0, 0, 0)
-        dateFilter.gte = dateFrom
+        const dateFromStr = dto.dateFrom.trim().split('T')[0]
+        if (dateFromStr) {
+          // Создаем дату как ISO строку в начале дня UTC
+          dateFilter.gte = new Date(dateFromStr + 'T00:00:00.000Z')
+        }
       }
       
       if (dto.dateTo) {
-        // Конец дня для dateTo
-        const dateTo = new Date(dto.dateTo)
-        dateTo.setHours(23, 59, 59, 999)
-        dateFilter.lte = dateTo
+        const dateToStr = dto.dateTo.trim().split('T')[0]
+        if (dateToStr) {
+          // Создаем дату как ISO строку в конце дня UTC
+          dateFilter.lte = new Date(dateToStr + 'T23:59:59.999Z')
+        }
       }
       
-      // Применяем фильтр к выбранному полю даты
-      if (dateField === 'acceptanceDate') {
-        where.acceptanceDate = dateFilter
-      } else if (dateField === 'unloadingDate') {
-        where.unloadingDate = dateFilter
-      } else if (dateField === 'shipmentPlan') {
-        where.shipmentPlan = dateFilter
+      // Применяем фильтр к выбранному полю даты только если есть хотя бы одно условие
+      if (dateFilter.gte || dateFilter.lte) {
+        if (dateField === 'acceptanceDate') {
+          where.acceptanceDate = dateFilter
+        } else if (dateField === 'unloadingDate') {
+          where.unloadingDate = dateFilter
+        } else if (dateField === 'shipmentPlan') {
+          where.shipmentPlan = dateFilter
+        }
       }
     }
 
