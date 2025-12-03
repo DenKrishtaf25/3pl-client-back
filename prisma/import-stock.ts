@@ -44,7 +44,7 @@ function parseQuantity(value: string): number {
 async function main() {
   try {
     // Читаем CSV файл с правильной кодировкой
-    const csvFilePath = join(process.cwd(), 'stock.csv')
+    const csvFilePath = join(process.cwd(), 'table_data', 'stock.csv')
     
     // Пробуем прочитать файл в разных кодировках
     let fileContent: string
@@ -84,6 +84,11 @@ async function main() {
     })
     const clientTINsSet = new Set(allClients.map(c => c.TIN))
     console.log(`Загружено ${clientTINsSet.size} клиентов для проверки\n`)
+
+    // Удаляем все существующие записи stock для полной перезаписи данных
+    console.log('Удаляем существующие записи stock...')
+    const deletedCount = await prisma.stock.deleteMany({})
+    console.log(`Удалено ${deletedCount.count} существующих записей stock\n`)
 
     // Импортируем данные в базу
     let imported = 0

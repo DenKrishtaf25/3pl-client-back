@@ -51,7 +51,7 @@ async function main() {
   try {
     // Читаем CSV файл с правильной кодировкой
     // Используем process.cwd() чтобы путь всегда указывал на корень проекта
-    const csvFilePath = join(process.cwd(), 'clients.csv')
+    const csvFilePath = join(process.cwd(), 'table_data', 'clients.csv')
     
     // Пробуем прочитать файл в разных кодировках
     let fileContent: string

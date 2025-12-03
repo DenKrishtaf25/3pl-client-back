@@ -70,7 +70,7 @@ function parseInteger(value: string): number {
 async function main() {
   try {
     // Читаем CSV файл с правильной кодировкой
-    const csvFilePath = join(process.cwd(), 'registry.csv')
+    const csvFilePath = join(process.cwd(), 'table_data', 'registry.csv')
     
     // Пробуем прочитать файл в разных кодировках
     let fileContent: string
