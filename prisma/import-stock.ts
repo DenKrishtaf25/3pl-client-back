@@ -85,13 +85,36 @@ async function main() {
     const clientTINsSet = new Set(allClients.map(c => c.TIN))
     console.log(`Загружено ${clientTINsSet.size} клиентов для проверки\n`)
 
-    // Удаляем все существующие записи stock для полной перезаписи данных
-    console.log('Удаляем существующие записи stock...')
-    const deletedCount = await prisma.stock.deleteMany({})
-    console.log(`Удалено ${deletedCount.count} существующих записей stock\n`)
+    // Загружаем все существующие записи stock для сравнения
+    console.log('Загружаем существующие записи stock для сравнения...')
+    const existingStocks = await prisma.stock.findMany({
+      select: {
+        id: true,
+        warehouse: true,
+        nomenclature: true,
+        article: true,
+        quantity: true,
+        clientTIN: true,
+      }
+    })
+    
+    // Функция для создания уникального ключа записи
+    const stockKey = (w: string, n: string, a: string, t: string) => `${w}|${n}|${a}|${t}`
+    
+    // Создаем Map для быстрого поиска по ключу (warehouse + nomenclature + article + clientTIN)
+    const existingStocksMap = new Map<string, { id: string; quantity: number }>()
+    existingStocks.forEach(stock => {
+      const key = stockKey(stock.warehouse, stock.nomenclature, stock.article, stock.clientTIN)
+      existingStocksMap.set(key, { id: stock.id, quantity: stock.quantity })
+    })
+    console.log(`Загружено ${existingStocksMap.size} существующих записей stock\n`)
+
+    // Создаем Set для отслеживания записей из CSV
+    const csvStockKeys = new Set<string>()
 
     // Импортируем данные в базу
     let imported = 0
+    let updated = 0
     let skipped = 0
     let errors = 0
     const skippedRecords: Array<{ row: number; reason: string; data?: string }> = []
@@ -186,17 +209,38 @@ async function main() {
           continue
         }
 
-        // Создаем запись Stock
-        await prisma.stock.create({
-          data: {
-            warehouse: rawWarehouse,
-            nomenclature: rawNomenclature,
-            article: rawArticle,
-            quantity: quantity,
-            clientTIN: clientTIN,
-            // createdAt и updatedAt будут созданы автоматически
-          },
-        })
+        // Создаем ключ для поиска
+        const key = stockKey(rawWarehouse, rawNomenclature, rawArticle, clientTIN)
+        csvStockKeys.add(key)
+
+        // Проверяем, существует ли запись
+        const existingStock = existingStocksMap.get(key)
+
+        if (existingStock) {
+          // Запись существует - проверяем, изменилось ли количество
+          if (existingStock.quantity !== quantity) {
+            // Обновляем запись
+            await prisma.stock.update({
+              where: { id: existingStock.id },
+              data: { quantity: quantity },
+            })
+            updated++
+          }
+          // Если количество не изменилось, ничего не делаем
+        } else {
+          // Запись не существует - создаем новую
+          await prisma.stock.create({
+            data: {
+              warehouse: rawWarehouse,
+              nomenclature: rawNomenclature,
+              article: rawArticle,
+              quantity: quantity,
+              clientTIN: clientTIN,
+              // createdAt и updatedAt будут созданы автоматически
+            },
+          })
+          imported++
+        }
 
         // Показываем прогресс каждые 1000 записей
         if ((i + 1) % 1000 === 0) {
@@ -219,8 +263,23 @@ async function main() {
       }
     }
 
+    // Удаляем записи, которых нет в CSV
+    console.log('\nУдаляем записи, отсутствующие в CSV...')
+    let deleted = 0
+    for (const [key, stock] of existingStocksMap.entries()) {
+      if (!csvStockKeys.has(key)) {
+        await prisma.stock.delete({
+          where: { id: stock.id },
+        })
+        deleted++
+      }
+    }
+    console.log(`Удалено ${deleted} записей, отсутствующих в CSV\n`)
+
     console.log('\n=== Результаты импорта ===')
-    console.log(`Импортировано: ${imported}`)
+    console.log(`Создано новых: ${imported}`)
+    console.log(`Обновлено: ${updated}`)
+    console.log(`Удалено: ${deleted}`)
     console.log(`Пропущено: ${skipped}`)
     console.log(`Ошибок: ${errors}`)
     
