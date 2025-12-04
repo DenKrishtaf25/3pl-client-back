@@ -228,18 +228,41 @@ async function main() {
           }
           // Если количество не изменилось, ничего не делаем
         } else {
-          // Запись не существует - создаем новую
-          await prisma.stock.create({
-            data: {
+          // Запись не найдена в Map - проверяем в БД на случай дубликатов
+          // (если в базе уже есть дубликаты, Map может содержать не все записи)
+          const existingInDb = await prisma.stock.findFirst({
+            where: {
               warehouse: rawWarehouse,
               nomenclature: rawNomenclature,
               article: rawArticle,
-              quantity: quantity,
               clientTIN: clientTIN,
-              // createdAt и updatedAt будут созданы автоматически
-            },
+            }
           })
-          imported++
+
+          if (existingInDb) {
+            // Запись найдена в БД - обновляем ее
+            if (existingInDb.quantity !== quantity) {
+              await prisma.stock.update({
+                where: { id: existingInDb.id },
+                data: { quantity: quantity },
+              })
+              updated++
+            }
+            // Если количество не изменилось, ничего не делаем
+          } else {
+            // Записи действительно нет - создаем новую
+            await prisma.stock.create({
+              data: {
+                warehouse: rawWarehouse,
+                nomenclature: rawNomenclature,
+                article: rawArticle,
+                quantity: quantity,
+                clientTIN: clientTIN,
+                // createdAt и updatedAt будут созданы автоматически
+              },
+            })
+            imported++
+          }
         }
 
         // Показываем прогресс каждые 1000 записей

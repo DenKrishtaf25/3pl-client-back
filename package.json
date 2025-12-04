@@ -26,6 +26,10 @@
         "import:registry:prod": "node dist/prisma/import-registry.js",
         "import:orders": "ts-node prisma/import-orders.ts",
         "import:orders:prod": "node dist/prisma/import-orders.js",
+        "check-duplicates:stock": "ts-node prisma/check-duplicates-stock.ts",
+        "check-duplicates:stock:prod": "node dist/prisma/check-duplicates-stock.js",
+        "remove-duplicates:stock": "ts-node prisma/check-duplicates-stock.ts --delete",
+        "remove-duplicates:stock:prod": "node dist/prisma/check-duplicates-stock.js --delete",
         "build:import": "tsc prisma/import-clients.ts --outDir dist/prisma --module commonjs --target ES2021 --esModuleInterop --resolveJsonModule --skipLibCheck"
     },
     "dependencies": {
