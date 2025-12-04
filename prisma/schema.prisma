@@ -112,6 +112,22 @@ model Order {
   @@map("order")
 }
 
+model ImportMetadata {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  importType String @unique // 'stock', 'registry', 'orders', 'clients'
+  lastImportAt DateTime @map("last_import_at")
+  recordsImported Int @map("records_imported")
+  recordsUpdated Int @map("records_updated")
+  recordsDeleted Int @map("records_deleted")
+  recordsSkipped Int @map("records_skipped")
+  errors Int
+
+  @@map("import_metadata")
+}
+
 enum Role {
   USER
   ADMIN

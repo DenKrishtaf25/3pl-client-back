@@ -141,13 +141,43 @@ export class StockService {
       }
     }
 
-    // Поиск по складу и номенклатуре
+    // Отдельные фильтры по Складу, Номенклатуре и Артикулу
+    if (dto.warehouse) {
+      const warehouseTerm = dto.warehouse.trim()
+      if (warehouseTerm) {
+        where.warehouse = { contains: warehouseTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.nomenclature) {
+      const nomenclatureTerm = dto.nomenclature.trim()
+      if (nomenclatureTerm) {
+        where.nomenclature = { contains: nomenclatureTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.article) {
+      const articleTerm = dto.article.trim()
+      if (articleTerm) {
+        where.article = { contains: articleTerm, mode: 'insensitive' }
+      }
+    }
+
+    // Общий поиск (если указан, работает вместе с отдельными фильтрами)
     if (dto.search) {
       const searchTerm = dto.search.trim()
-      where.OR = [
-        { warehouse: { contains: searchTerm, mode: 'insensitive' } },
-        { nomenclature: { contains: searchTerm, mode: 'insensitive' } },
-      ]
+      if (searchTerm) {
+        // Если уже есть фильтры по отдельным полям, добавляем OR условие
+        // Иначе используем OR для поиска по всем полям
+        if (!dto.warehouse && !dto.nomenclature && !dto.article) {
+          where.OR = [
+            { warehouse: { contains: searchTerm, mode: 'insensitive' } },
+            { nomenclature: { contains: searchTerm, mode: 'insensitive' } },
+            { article: { contains: searchTerm, mode: 'insensitive' } },
+          ]
+        }
+        // Если есть отдельные фильтры, search игнорируется (приоритет у отдельных фильтров)
+      }
     }
 
     // Формируем сортировку
@@ -324,5 +354,31 @@ export class StockService {
       where: { id },
       include: { client: true }
     })
+  }
+
+  async getLastImportInfo() {
+    const metadata = await this.prisma.importMetadata.findUnique({
+      where: { importType: 'stock' }
+    })
+
+    if (!metadata) {
+      return {
+        lastImportAt: null,
+        recordsImported: 0,
+        recordsUpdated: 0,
+        recordsDeleted: 0,
+        recordsSkipped: 0,
+        errors: 0,
+      }
+    }
+
+    return {
+      lastImportAt: metadata.lastImportAt,
+      recordsImported: metadata.recordsImported,
+      recordsUpdated: metadata.recordsUpdated,
+      recordsDeleted: metadata.recordsDeleted,
+      recordsSkipped: metadata.recordsSkipped,
+      errors: metadata.errors,
+    }
   }
 }

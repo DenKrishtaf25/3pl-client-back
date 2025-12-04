@@ -27,6 +27,12 @@ export class UserStockController {
     return this.stockService.findAll(userId, userRole, query.clientTIN)
   }
 
+  @Get('meta/last-import')
+  @Auth()
+  async getLastImportInfo() {
+    return this.stockService.getLastImportInfo()
+  }
+
   @Get(':id')
   @Auth()
   async findOne(@Param('id') id: string, @CurrentUser('id') userId: string, @CurrentUser('role') userRole: string) {

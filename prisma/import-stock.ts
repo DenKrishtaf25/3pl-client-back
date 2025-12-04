@@ -306,6 +306,30 @@ async function main() {
     console.log(`Пропущено: ${skipped}`)
     console.log(`Ошибок: ${errors}`)
     
+    // Сохраняем метаданные импорта
+    const importTime = new Date()
+    await prisma.importMetadata.upsert({
+      where: { importType: 'stock' },
+      update: {
+        lastImportAt: importTime,
+        recordsImported: imported,
+        recordsUpdated: updated,
+        recordsDeleted: deleted,
+        recordsSkipped: skipped,
+        errors: errors,
+      },
+      create: {
+        importType: 'stock',
+        lastImportAt: importTime,
+        recordsImported: imported,
+        recordsUpdated: updated,
+        recordsDeleted: deleted,
+        recordsSkipped: skipped,
+        errors: errors,
+      },
+    })
+    console.log(`\nМетаданные импорта сохранены: ${importTime.toISOString()}`)
+    
     // Детальный отчет о пропущенных записях (первые 50)
     if (skippedRecords.length > 0) {
       console.log('\n=== Детализация пропущенных записей (первые 50) ===')

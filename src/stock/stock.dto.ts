@@ -46,6 +46,18 @@ export class FindStockDto {
   search?: string
 
   @IsOptional()
+  @IsString()
+  warehouse?: string
+
+  @IsOptional()
+  @IsString()
+  nomenclature?: string
+
+  @IsOptional()
+  @IsString()
+  article?: string
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
