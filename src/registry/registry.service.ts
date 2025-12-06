@@ -474,5 +474,31 @@ export class RegistryService {
       include: { client: true }
     })
   }
+
+  async getLastImportInfo() {
+    const metadata = await this.prisma.importMetadata.findUnique({
+      where: { importType: 'registry' }
+    })
+
+    if (!metadata) {
+      return {
+        lastImportAt: null,
+        recordsImported: 0,
+        recordsUpdated: 0,
+        recordsDeleted: 0,
+        recordsSkipped: 0,
+        errors: 0,
+      }
+    }
+
+    return {
+      lastImportAt: metadata.lastImportAt,
+      recordsImported: metadata.recordsImported,
+      recordsUpdated: metadata.recordsUpdated,
+      recordsDeleted: metadata.recordsDeleted,
+      recordsSkipped: metadata.recordsSkipped,
+      errors: metadata.errors,
+    }
+  }
 }
 
