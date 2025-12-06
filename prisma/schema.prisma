@@ -80,6 +80,10 @@ model Registry {
   packagesActual   Int      @map("packages_actual")
   linesPlanned     Int      @map("lines_planned")
   linesActual      Int      @map("lines_actual")
+  vehicleNumber    String?  @map("vehicle_number")
+  driverName       String?  @map("driver_name")
+  processingType   String?  @map("processing_type")
+  departureDate    DateTime? @map("departure_date")
 
   client    Client @relation(fields: [clientTIN], references: [TIN])
   clientTIN String @map("client_tin")

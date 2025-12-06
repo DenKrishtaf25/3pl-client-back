@@ -126,13 +126,17 @@ async function main() {
         const rawBranch = record.Филиал ? cleanValue(String(record.Филиал)) : ''
         const rawCounterparty = record.Контрагент ? cleanValue(String(record.Контрагент)) : ''
         const rawClientTIN = record.ИНН ? cleanValue(String(record.ИНН)) : ''
+        const rawVehicleNumber = record['Номер ТС'] ? cleanValue(String(record['Номер ТС'])) : ''
         const rawOrderType = record['Тип прихода'] ? cleanValue(String(record['Тип прихода'])) : ''
         const rawOrderNumber = record['Номер заказа или маршрутного листа'] ? cleanValue(String(record['Номер заказа или маршрутного листа'])) : ''
+        const rawDriverName = record['ФИО водителя'] ? cleanValue(String(record['ФИО водителя'])) : ''
+        const rawProcessingType = record['Тип Обработки'] ? cleanValue(String(record['Тип Обработки'])) : ''
         const rawKisNumber = '' // Нет в CSV, используем пустое значение
         const rawUnloadingDate = record['Дата фактического прибытия ТС'] ? String(record['Дата фактического прибытия ТС']) : ''
         const rawStatus = record['Статус ТС'] ? cleanValue(String(record['Статус ТС'])) : ''
         const rawAcceptanceDate = record['Дата прибытия ТС по заявке'] ? String(record['Дата прибытия ТС по заявке']) : ''
         const rawShipmentPlan = record['Дата планового прибытия ТС'] ? String(record['Дата планового прибытия ТС']) : ''
+        const rawDepartureDate = record['Дата убытия ТС'] ? String(record['Дата убытия ТС']) : ''
         const rawPackagesPlanned = '0' // Нет в CSV
         const rawPackagesActual = '0' // Нет в CSV
         const rawLinesPlanned = '0' // Нет в CSV
@@ -212,6 +216,7 @@ async function main() {
         const unloadingDate = parseDate(rawUnloadingDate)
         const acceptanceDate = parseDate(rawAcceptanceDate)
         const shipmentPlan = parseDate(rawShipmentPlan)
+        const departureDate = parseDate(rawDepartureDate)
 
         // Для обязательных дат в схеме используем текущую дату если нет данных
         const finalUnloadingDate = unloadingDate || new Date()
@@ -240,6 +245,10 @@ async function main() {
             packagesActual: packagesActual,
             linesPlanned: linesPlanned,
             linesActual: linesActual,
+            vehicleNumber: rawVehicleNumber || null,
+            driverName: rawDriverName || null,
+            processingType: rawProcessingType || null,
+            departureDate: departureDate,
             clientTIN: clientTIN,
             // createdAt и updatedAt будут созданы автоматически
           },

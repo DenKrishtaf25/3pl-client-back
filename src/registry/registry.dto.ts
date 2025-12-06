@@ -41,6 +41,22 @@ export class RegistryDto {
   @IsNumber()
   linesActual: number
 
+  @IsOptional()
+  @IsString()
+  vehicleNumber?: string
+
+  @IsOptional()
+  @IsString()
+  driverName?: string
+
+  @IsOptional()
+  @IsString()
+  processingType?: string
+
+  @IsOptional()
+  @IsDateString()
+  departureDate?: string
+
   @IsString()
   clientTIN: string
 }
@@ -100,6 +116,22 @@ export class UpdateRegistryDto {
 
   @IsOptional()
   @IsString()
+  vehicleNumber?: string
+
+  @IsOptional()
+  @IsString()
+  driverName?: string
+
+  @IsOptional()
+  @IsString()
+  processingType?: string
+
+  @IsOptional()
+  @IsDateString()
+  departureDate?: string
+
+  @IsOptional()
+  @IsString()
   clientTIN?: string
 }
 
@@ -107,6 +139,38 @@ export class FindRegistryDto {
   @IsOptional()
   @IsString()
   search?: string
+
+  @IsOptional()
+  @IsString()
+  branch?: string
+
+  @IsOptional()
+  @IsString()
+  counterparty?: string
+
+  @IsOptional()
+  @IsString()
+  vehicleNumber?: string
+
+  @IsOptional()
+  @IsString()
+  driverName?: string
+
+  @IsOptional()
+  @IsString()
+  orderNumber?: string
+
+  @IsOptional()
+  @IsString()
+  orderType?: string
+
+  @IsOptional()
+  @IsString()
+  status?: string
+
+  @IsOptional()
+  @IsString()
+  processingType?: string
 
   @IsOptional()
   @Type(() => Number)

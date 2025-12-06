@@ -141,13 +141,84 @@ export class RegistryService {
       }
     }
 
-    // Поиск по филиалу и контрагенту
+    // Отдельные фильтры по полям
+    if (dto.branch) {
+      const branchTerm = dto.branch.trim()
+      if (branchTerm) {
+        where.branch = { contains: branchTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.counterparty) {
+      const counterpartyTerm = dto.counterparty.trim()
+      if (counterpartyTerm) {
+        where.counterparty = { contains: counterpartyTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.vehicleNumber) {
+      const vehicleNumberTerm = dto.vehicleNumber.trim()
+      if (vehicleNumberTerm) {
+        where.vehicleNumber = { contains: vehicleNumberTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.driverName) {
+      const driverNameTerm = dto.driverName.trim()
+      if (driverNameTerm) {
+        where.driverName = { contains: driverNameTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.orderNumber) {
+      const orderNumberTerm = dto.orderNumber.trim()
+      if (orderNumberTerm) {
+        where.orderNumber = { contains: orderNumberTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.orderType) {
+      const orderTypeTerm = dto.orderType.trim()
+      if (orderTypeTerm) {
+        where.orderType = { contains: orderTypeTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.status) {
+      const statusTerm = dto.status.trim()
+      if (statusTerm) {
+        where.status = { contains: statusTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.processingType) {
+      const processingTypeTerm = dto.processingType.trim()
+      if (processingTypeTerm) {
+        where.processingType = { contains: processingTypeTerm, mode: 'insensitive' }
+      }
+    }
+
+    // Общий поиск (если указан, работает вместе с отдельными фильтрами)
     if (dto.search) {
       const searchTerm = dto.search.trim()
-      where.OR = [
-        { branch: { contains: searchTerm, mode: 'insensitive' } },
-        { counterparty: { contains: searchTerm, mode: 'insensitive' } },
-      ]
+      if (searchTerm) {
+        // Если уже есть фильтры по отдельным полям, добавляем OR условие
+        // Иначе используем OR для поиска по всем полям
+        if (!dto.branch && !dto.counterparty && !dto.vehicleNumber && !dto.driverName && !dto.orderNumber && !dto.orderType && !dto.status && !dto.processingType) {
+          where.OR = [
+            { branch: { contains: searchTerm, mode: 'insensitive' } },
+            { counterparty: { contains: searchTerm, mode: 'insensitive' } },
+            { vehicleNumber: { contains: searchTerm, mode: 'insensitive' } },
+            { driverName: { contains: searchTerm, mode: 'insensitive' } },
+            { orderNumber: { contains: searchTerm, mode: 'insensitive' } },
+            { orderType: { contains: searchTerm, mode: 'insensitive' } },
+            { status: { contains: searchTerm, mode: 'insensitive' } },
+            { processingType: { contains: searchTerm, mode: 'insensitive' } },
+            { kisNumber: { contains: searchTerm, mode: 'insensitive' } },
+          ]
+        }
+        // Если есть отдельные фильтры, search игнорируется (приоритет у отдельных фильтров)
+      }
     }
 
     // Фильтрация по дате
@@ -221,6 +292,10 @@ export class RegistryService {
         packagesActual: true,
         linesPlanned: true,
         linesActual: true,
+        vehicleNumber: true,
+        driverName: true,
+        processingType: true,
+        departureDate: true,
         clientTIN: true,
         createdAt: true,
         updatedAt: true,
@@ -304,6 +379,10 @@ export class RegistryService {
         packagesActual: dto.packagesActual,
         linesPlanned: dto.linesPlanned,
         linesActual: dto.linesActual,
+        vehicleNumber: dto.vehicleNumber,
+        driverName: dto.driverName,
+        processingType: dto.processingType,
+        departureDate: dto.departureDate ? new Date(dto.departureDate) : null,
         clientTIN: dto.clientTIN
       },
       include: { client: true }
@@ -362,6 +441,10 @@ export class RegistryService {
         ...(dto.packagesActual !== undefined && { packagesActual: dto.packagesActual }),
         ...(dto.linesPlanned !== undefined && { linesPlanned: dto.linesPlanned }),
         ...(dto.linesActual !== undefined && { linesActual: dto.linesActual }),
+        ...(dto.vehicleNumber !== undefined && { vehicleNumber: dto.vehicleNumber }),
+        ...(dto.driverName !== undefined && { driverName: dto.driverName }),
+        ...(dto.processingType !== undefined && { processingType: dto.processingType }),
+        ...(dto.departureDate !== undefined && { departureDate: dto.departureDate ? new Date(dto.departureDate) : null }),
         ...(dto.clientTIN && { clientTIN: dto.clientTIN })
       },
       include: { client: true }
