@@ -186,8 +186,8 @@ export class FindRegistryDto {
   limit?: number
 
   @IsOptional()
-  @IsEnum(['orderNumber', 'acceptanceDate', 'unloadingDate', 'shipmentPlan'])
-  sortBy?: 'orderNumber' | 'acceptanceDate' | 'unloadingDate' | 'shipmentPlan'
+  @IsEnum(['orderNumber', 'acceptanceDate', 'unloadingDate', 'shipmentPlan', 'departureDate'])
+  sortBy?: 'orderNumber' | 'acceptanceDate' | 'unloadingDate' | 'shipmentPlan' | 'departureDate'
 
   @IsOptional()
   @IsEnum(['asc', 'desc'])
@@ -197,16 +197,31 @@ export class FindRegistryDto {
   @IsString()
   clientTIN?: string
 
+  // Фильтры по дате планового прибытия (shipmentPlan)
   @IsOptional()
   @IsDateString()
-  dateFrom?: string
+  shipmentPlanFrom?: string
 
   @IsOptional()
   @IsDateString()
-  dateTo?: string
+  shipmentPlanTo?: string
+
+  // Фильтры по дате фактического прибытия (unloadingDate)
+  @IsOptional()
+  @IsDateString()
+  unloadingDateFrom?: string
 
   @IsOptional()
-  @IsEnum(['acceptanceDate', 'unloadingDate', 'shipmentPlan'])
-  dateField?: 'acceptanceDate' | 'unloadingDate' | 'shipmentPlan'
+  @IsDateString()
+  unloadingDateTo?: string
+
+  // Фильтры по дате убытия (departureDate)
+  @IsOptional()
+  @IsDateString()
+  departureDateFrom?: string
+
+  @IsOptional()
+  @IsDateString()
+  departureDateTo?: string
 }
 

@@ -221,38 +221,110 @@ export class RegistryService {
       }
     }
 
-    // Фильтрация по дате
-    if (dto.dateFrom || dto.dateTo) {
-      // По умолчанию фильтруем по acceptanceDate (дата приемки), если не указано поле
-      const dateField = dto.dateField || 'acceptanceDate'
+    // Вспомогательная функция для парсинга даты с временем
+    const parseDateTime = (dateStr: string | undefined, isEndOfDay: boolean = false): Date | undefined => {
+      if (!dateStr) return undefined
       
-      const dateFilter: { gte?: Date; lte?: Date } = {}
+      const trimmed = dateStr.trim()
+      if (!trimmed) return undefined
       
-      if (dto.dateFrom) {
-        const dateFromStr = dto.dateFrom.trim().split('T')[0]
-        if (dateFromStr) {
-          // Создаем дату как ISO строку в начале дня UTC
-          dateFilter.gte = new Date(dateFromStr + 'T00:00:00.000Z')
+      // Если дата содержит время
+      if (trimmed.includes('T') || trimmed.includes(' ')) {
+        // Если уже есть Z или часовой пояс, используем как есть
+        if (trimmed.includes('Z') || trimmed.match(/[+-]\d{2}:\d{2}$/)) {
+          const date = new Date(trimmed)
+          if (!isNaN(date.getTime())) {
+            return date
+          }
+        } else {
+          // Если нет часового пояса, добавляем Z (интерпретируем как UTC)
+          const dateStrWithZ = trimmed.endsWith('Z') ? trimmed : trimmed + 'Z'
+          const date = new Date(dateStrWithZ)
+          if (!isNaN(date.getTime())) {
+            return date
+          }
         }
       }
       
-      if (dto.dateTo) {
-        const dateToStr = dto.dateTo.trim().split('T')[0]
-        if (dateToStr) {
-          // Создаем дату как ISO строку в конце дня UTC
-          dateFilter.lte = new Date(dateToStr + 'T23:59:59.999Z')
+      // Если только дата, добавляем время
+      const dateOnly = trimmed.split('T')[0].split(' ')[0]
+      if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+        if (isEndOfDay) {
+          return new Date(dateOnly + 'T23:59:59.999Z')
+        } else {
+          return new Date(dateOnly + 'T00:00:00.000Z')
         }
       }
       
-      // Применяем фильтр к выбранному полю даты только если есть хотя бы одно условие
-      if (dateFilter.gte || dateFilter.lte) {
-        if (dateField === 'acceptanceDate') {
-          where.acceptanceDate = dateFilter
-        } else if (dateField === 'unloadingDate') {
-          where.unloadingDate = dateFilter
-        } else if (dateField === 'shipmentPlan') {
-          where.shipmentPlan = dateFilter
+      return undefined
+    }
+
+    // Фильтрация по дате планового прибытия (shipmentPlan)
+    if (dto.shipmentPlanFrom || dto.shipmentPlanTo) {
+      const shipmentPlanFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.shipmentPlanFrom) {
+        const fromDate = parseDateTime(dto.shipmentPlanFrom, false)
+        if (fromDate) {
+          shipmentPlanFilter.gte = fromDate
         }
+      }
+      
+      if (dto.shipmentPlanTo) {
+        const toDate = parseDateTime(dto.shipmentPlanTo, true)
+        if (toDate) {
+          shipmentPlanFilter.lte = toDate
+        }
+      }
+      
+      if (shipmentPlanFilter.gte || shipmentPlanFilter.lte) {
+        where.shipmentPlan = shipmentPlanFilter
+      }
+    }
+
+    // Фильтрация по дате фактического прибытия (unloadingDate)
+    if (dto.unloadingDateFrom || dto.unloadingDateTo) {
+      const unloadingDateFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.unloadingDateFrom) {
+        const fromDate = parseDateTime(dto.unloadingDateFrom, false)
+        if (fromDate) {
+          unloadingDateFilter.gte = fromDate
+        }
+      }
+      
+      if (dto.unloadingDateTo) {
+        const toDate = parseDateTime(dto.unloadingDateTo, true)
+        if (toDate) {
+          unloadingDateFilter.lte = toDate
+        }
+      }
+      
+      if (unloadingDateFilter.gte || unloadingDateFilter.lte) {
+        where.unloadingDate = unloadingDateFilter
+      }
+    }
+
+    // Фильтрация по дате убытия (departureDate)
+    if (dto.departureDateFrom || dto.departureDateTo) {
+      const departureDateFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.departureDateFrom) {
+        const fromDate = parseDateTime(dto.departureDateFrom, false)
+        if (fromDate) {
+          departureDateFilter.gte = fromDate
+        }
+      }
+      
+      if (dto.departureDateTo) {
+        const toDate = parseDateTime(dto.departureDateTo, true)
+        if (toDate) {
+          departureDateFilter.lte = toDate
+        }
+      }
+      
+      if (departureDateFilter.gte || departureDateFilter.lte) {
+        where.departureDate = departureDateFilter
       }
     }
 
@@ -264,6 +336,8 @@ export class RegistryService {
       orderBy.unloadingDate = dto.sortOrder || 'desc'
     } else if (dto.sortBy === 'shipmentPlan') {
       orderBy.shipmentPlan = dto.sortOrder || 'desc'
+    } else if (dto.sortBy === 'departureDate') {
+      orderBy.departureDate = dto.sortOrder || 'desc'
     } else {
       orderBy.orderNumber = dto.sortOrder || 'asc'
     }

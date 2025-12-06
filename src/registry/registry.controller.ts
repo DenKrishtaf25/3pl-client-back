@@ -20,7 +20,10 @@ export class UserRegistryController {
     @Query() query: FindRegistryDto
   ) {
     // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || query.dateFrom || query.dateTo) {
+    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
+        query.shipmentPlanFrom || query.shipmentPlanTo || 
+        query.unloadingDateFrom || query.unloadingDateTo || 
+        query.departureDateFrom || query.departureDateTo) {
       return this.registryService.findAllWithPagination(query, userId, userRole)
     }
     // Для обратной совместимости - старый метод
@@ -54,7 +57,10 @@ export class AdminRegistryController {
     @Query() query: FindRegistryDto
   ) {
     // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || query.dateFrom || query.dateTo) {
+    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
+        query.shipmentPlanFrom || query.shipmentPlanTo || 
+        query.unloadingDateFrom || query.unloadingDateTo || 
+        query.departureDateFrom || query.departureDateTo) {
       return this.registryService.findAllWithPagination(query, userId, userRole)
     }
     // Для обратной совместимости - старый метод
