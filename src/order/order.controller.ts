@@ -20,7 +20,10 @@ export class UserOrderController {
     @Query() query: FindOrderDto
   ) {
     // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || query.dateFrom || query.dateTo) {
+    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
+        query.acceptanceDateFrom || query.acceptanceDateTo || 
+        query.exportDateFrom || query.exportDateTo || 
+        query.shipmentDateFrom || query.shipmentDateTo) {
       return this.orderService.findAllWithPagination(query, userId, userRole)
     }
     // Для обратной совместимости - старый метод
@@ -48,7 +51,10 @@ export class AdminOrderController {
     @Query() query: FindOrderDto
   ) {
     // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || query.dateFrom || query.dateTo) {
+    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
+        query.acceptanceDateFrom || query.acceptanceDateTo || 
+        query.exportDateFrom || query.exportDateTo || 
+        query.shipmentDateFrom || query.shipmentDateTo) {
       return this.orderService.findAllWithPagination(query, userId, userRole)
     }
     // Для обратной совместимости - старый метод

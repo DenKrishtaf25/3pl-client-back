@@ -109,6 +109,30 @@ export class FindOrderDto {
   search?: string
 
   @IsOptional()
+  @IsString()
+  branch?: string
+
+  @IsOptional()
+  @IsString()
+  counterparty?: string
+
+  @IsOptional()
+  @IsString()
+  orderNumber?: string
+
+  @IsOptional()
+  @IsString()
+  orderType?: string
+
+  @IsOptional()
+  @IsString()
+  status?: string
+
+  @IsOptional()
+  @IsString()
+  kisNumber?: string
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -133,16 +157,31 @@ export class FindOrderDto {
   @IsString()
   clientTIN?: string
 
+  // Фильтры по дате приемки/отгрузки (acceptanceDate)
   @IsOptional()
   @IsDateString()
-  dateFrom?: string
+  acceptanceDateFrom?: string
 
   @IsOptional()
   @IsDateString()
-  dateTo?: string
+  acceptanceDateTo?: string
+
+  // Фильтры по дате экспорта (exportDate)
+  @IsOptional()
+  @IsDateString()
+  exportDateFrom?: string
 
   @IsOptional()
-  @IsEnum(['exportDate', 'shipmentDate', 'acceptanceDate'])
-  dateField?: 'exportDate' | 'shipmentDate' | 'acceptanceDate'
+  @IsDateString()
+  exportDateTo?: string
+
+  // Фильтры по дате отгрузки (shipmentDate)
+  @IsOptional()
+  @IsDateString()
+  shipmentDateFrom?: string
+
+  @IsOptional()
+  @IsDateString()
+  shipmentDateTo?: string
 }
 

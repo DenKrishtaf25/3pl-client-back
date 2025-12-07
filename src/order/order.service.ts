@@ -141,47 +141,173 @@ export class OrderService {
       }
     }
 
-    // Поиск по филиалу и контрагенту
-    if (dto.search) {
-      const searchTerm = dto.search.trim()
-      where.OR = [
-        { branch: { contains: searchTerm, mode: 'insensitive' } },
-        { counterparty: { contains: searchTerm, mode: 'insensitive' } },
-      ]
+    // Отдельные фильтры по полям
+    if (dto.branch) {
+      const branchTerm = dto.branch.trim()
+      if (branchTerm) {
+        where.branch = { contains: branchTerm, mode: 'insensitive' }
+      }
     }
 
-    // Фильтрация по дате
-    if (dto.dateFrom || dto.dateTo) {
-      // По умолчанию фильтруем по acceptanceDate (дата приемки/отгрузки), если не указано поле
-      const dateField = dto.dateField || 'acceptanceDate'
+    if (dto.counterparty) {
+      const counterpartyTerm = dto.counterparty.trim()
+      if (counterpartyTerm) {
+        where.counterparty = { contains: counterpartyTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.orderNumber) {
+      const orderNumberTerm = dto.orderNumber.trim()
+      if (orderNumberTerm) {
+        where.orderNumber = { contains: orderNumberTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.orderType) {
+      const orderTypeTerm = dto.orderType.trim()
+      if (orderTypeTerm) {
+        where.orderType = { contains: orderTypeTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.status) {
+      const statusTerm = dto.status.trim()
+      if (statusTerm) {
+        where.status = { contains: statusTerm, mode: 'insensitive' }
+      }
+    }
+
+    if (dto.kisNumber) {
+      const kisNumberTerm = dto.kisNumber.trim()
+      if (kisNumberTerm) {
+        where.kisNumber = { contains: kisNumberTerm, mode: 'insensitive' }
+      }
+    }
+
+    // Общий поиск (если указан, работает вместе с отдельными фильтрами)
+    if (dto.search) {
+      const searchTerm = dto.search.trim()
+      if (searchTerm) {
+        // Если уже есть фильтры по отдельным полям, добавляем OR условие
+        // Иначе используем OR для поиска по всем полям
+        if (!dto.branch && !dto.counterparty && !dto.orderNumber && !dto.orderType && !dto.status && !dto.kisNumber) {
+          where.OR = [
+            { branch: { contains: searchTerm, mode: 'insensitive' } },
+            { counterparty: { contains: searchTerm, mode: 'insensitive' } },
+            { orderNumber: { contains: searchTerm, mode: 'insensitive' } },
+            { orderType: { contains: searchTerm, mode: 'insensitive' } },
+            { status: { contains: searchTerm, mode: 'insensitive' } },
+            { kisNumber: { contains: searchTerm, mode: 'insensitive' } },
+          ]
+        }
+        // Если есть отдельные фильтры, search игнорируется (приоритет у отдельных фильтров)
+      }
+    }
+
+    // Вспомогательная функция для парсинга даты с временем
+    const parseDateTime = (dateStr: string | undefined, isEndOfDay: boolean = false): Date | undefined => {
+      if (!dateStr) return undefined
       
-      const dateFilter: { gte?: Date; lte?: Date } = {}
+      const trimmed = dateStr.trim()
+      if (!trimmed) return undefined
       
-      if (dto.dateFrom) {
-        const dateFromStr = dto.dateFrom.trim().split('T')[0]
-        if (dateFromStr) {
-          // Создаем дату как ISO строку в начале дня UTC
-          dateFilter.gte = new Date(dateFromStr + 'T00:00:00.000Z')
+      // Если дата содержит время
+      if (trimmed.includes('T') || trimmed.includes(' ')) {
+        // Если уже есть Z или часовой пояс, используем как есть
+        if (trimmed.includes('Z') || trimmed.match(/[+-]\d{2}:\d{2}$/)) {
+          const date = new Date(trimmed)
+          if (!isNaN(date.getTime())) {
+            return date
+          }
+        } else {
+          // Если нет часового пояса, добавляем Z (интерпретируем как UTC)
+          const dateStrWithZ = trimmed.endsWith('Z') ? trimmed : trimmed + 'Z'
+          const date = new Date(dateStrWithZ)
+          if (!isNaN(date.getTime())) {
+            return date
+          }
         }
       }
       
-      if (dto.dateTo) {
-        const dateToStr = dto.dateTo.trim().split('T')[0]
-        if (dateToStr) {
-          // Создаем дату как ISO строку в конце дня UTC
-          dateFilter.lte = new Date(dateToStr + 'T23:59:59.999Z')
+      // Если только дата, добавляем время
+      const dateOnly = trimmed.split('T')[0].split(' ')[0]
+      if (dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+        if (isEndOfDay) {
+          return new Date(dateOnly + 'T23:59:59.999Z')
+        } else {
+          return new Date(dateOnly + 'T00:00:00.000Z')
         }
       }
       
-      // Применяем фильтр к выбранному полю даты только если есть хотя бы одно условие
-      if (dateFilter.gte || dateFilter.lte) {
-        if (dateField === 'acceptanceDate') {
-          where.acceptanceDate = dateFilter
-        } else if (dateField === 'exportDate') {
-          where.exportDate = dateFilter
-        } else if (dateField === 'shipmentDate') {
-          where.shipmentDate = dateFilter
+      return undefined
+    }
+
+    // Фильтрация по дате приемки/отгрузки (acceptanceDate)
+    if (dto.acceptanceDateFrom || dto.acceptanceDateTo) {
+      const acceptanceDateFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.acceptanceDateFrom) {
+        const fromDate = parseDateTime(dto.acceptanceDateFrom, false)
+        if (fromDate) {
+          acceptanceDateFilter.gte = fromDate
         }
+      }
+      
+      if (dto.acceptanceDateTo) {
+        const toDate = parseDateTime(dto.acceptanceDateTo, true)
+        if (toDate) {
+          acceptanceDateFilter.lte = toDate
+        }
+      }
+      
+      if (acceptanceDateFilter.gte || acceptanceDateFilter.lte) {
+        where.acceptanceDate = acceptanceDateFilter
+      }
+    }
+
+    // Фильтрация по дате экспорта (exportDate)
+    if (dto.exportDateFrom || dto.exportDateTo) {
+      const exportDateFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.exportDateFrom) {
+        const fromDate = parseDateTime(dto.exportDateFrom, false)
+        if (fromDate) {
+          exportDateFilter.gte = fromDate
+        }
+      }
+      
+      if (dto.exportDateTo) {
+        const toDate = parseDateTime(dto.exportDateTo, true)
+        if (toDate) {
+          exportDateFilter.lte = toDate
+        }
+      }
+      
+      if (exportDateFilter.gte || exportDateFilter.lte) {
+        where.exportDate = exportDateFilter
+      }
+    }
+
+    // Фильтрация по дате отгрузки (shipmentDate)
+    if (dto.shipmentDateFrom || dto.shipmentDateTo) {
+      const shipmentDateFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.shipmentDateFrom) {
+        const fromDate = parseDateTime(dto.shipmentDateFrom, false)
+        if (fromDate) {
+          shipmentDateFilter.gte = fromDate
+        }
+      }
+      
+      if (dto.shipmentDateTo) {
+        const toDate = parseDateTime(dto.shipmentDateTo, true)
+        if (toDate) {
+          shipmentDateFilter.lte = toDate
+        }
+      }
+      
+      if (shipmentDateFilter.gte || shipmentDateFilter.lte) {
+        where.shipmentDate = shipmentDateFilter
       }
     }
 
