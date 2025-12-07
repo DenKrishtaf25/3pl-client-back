@@ -113,8 +113,35 @@ async function main() {
     const clientTINsSet = new Set(allClients.map(c => c.TIN))
     console.log(`Загружено ${clientTINsSet.size} клиентов для проверки\n`)
 
+    // Загружаем все существующие записи orders для сравнения
+    console.log('Загружаем существующие записи orders для сравнения...')
+    const existingOrders = await prisma.order.findMany({
+      select: {
+        id: true,
+        branch: true,
+        orderType: true,
+        orderNumber: true,
+        clientTIN: true,
+      }
+    })
+    
+    // Функция для создания уникального ключа записи
+    const orderKey = (b: string, ot: string, on: string, t: string) => `${b}|${ot}|${on}|${t}`
+    
+    // Создаем Map для быстрого поиска по ключу (branch + orderType + orderNumber + clientTIN)
+    const existingOrdersMap = new Map<string, { id: string }>()
+    existingOrders.forEach(order => {
+      const key = orderKey(order.branch, order.orderType, order.orderNumber, order.clientTIN)
+      existingOrdersMap.set(key, { id: order.id })
+    })
+    console.log(`Загружено ${existingOrdersMap.size} существующих записей orders\n`)
+
+    // Создаем Set для отслеживания записей из CSV
+    const csvOrderKeys = new Set<string>()
+
     // Импортируем данные в базу
     let imported = 0
+    let updated = 0
     let skipped = 0
     let errors = 0
     const skippedRecords: Array<{ row: number; reason: string; data?: string }> = []
@@ -226,36 +253,98 @@ async function main() {
         const linesPlanned = parseInteger(rawLinesPlanned)
         const linesActual = parseInteger(rawLinesActual)
 
-        // Создаем запись Order
-        await prisma.order.create({
-          data: {
-            branch: rawBranch,
-            orderType: rawOrderType,
-            orderNumber: rawOrderNumber,
-            kisNumber: rawKisNumber || '',
-            exportDate: finalExportDate,
-            shipmentDate: finalShipmentDate,
-            status: rawStatus,
-            packagesPlanned: packagesPlanned,
-            packagesActual: packagesActual,
-            linesPlanned: linesPlanned,
-            linesActual: linesActual,
-            counterparty: rawCounterparty || 'Не указан',
-            acceptanceDate: finalAcceptanceDate,
-            clientTIN: clientTIN,
-            // createdAt и updatedAt будут созданы автоматически
-          },
-        })
+        // Создаем ключ для поиска
+        const key = orderKey(rawBranch, rawOrderType, rawOrderNumber, clientTIN)
+        csvOrderKeys.add(key)
+
+        // Проверяем, существует ли запись
+        const existingOrder = existingOrdersMap.get(key)
+
+        if (existingOrder) {
+          // Запись существует - обновляем ее
+          await prisma.order.update({
+            where: { id: existingOrder.id },
+            data: {
+              branch: rawBranch,
+              orderType: rawOrderType,
+              orderNumber: rawOrderNumber,
+              kisNumber: rawKisNumber || '',
+              exportDate: finalExportDate,
+              shipmentDate: finalShipmentDate,
+              status: rawStatus,
+              packagesPlanned: packagesPlanned,
+              packagesActual: packagesActual,
+              linesPlanned: linesPlanned,
+              linesActual: linesActual,
+              counterparty: rawCounterparty || 'Не указан',
+              acceptanceDate: finalAcceptanceDate,
+            },
+          })
+          updated++
+        } else {
+          // Запись не найдена в Map - проверяем в БД на случай дубликатов
+          const existingInDb = await prisma.order.findFirst({
+            where: {
+              branch: rawBranch,
+              orderType: rawOrderType,
+              orderNumber: rawOrderNumber,
+              clientTIN: clientTIN,
+            }
+          })
+
+          if (existingInDb) {
+            // Запись найдена в БД - обновляем ее
+            await prisma.order.update({
+              where: { id: existingInDb.id },
+              data: {
+                branch: rawBranch,
+                orderType: rawOrderType,
+                orderNumber: rawOrderNumber,
+                kisNumber: rawKisNumber || '',
+                exportDate: finalExportDate,
+                shipmentDate: finalShipmentDate,
+                status: rawStatus,
+                packagesPlanned: packagesPlanned,
+                packagesActual: packagesActual,
+                linesPlanned: linesPlanned,
+                linesActual: linesActual,
+                counterparty: rawCounterparty || 'Не указан',
+                acceptanceDate: finalAcceptanceDate,
+              },
+            })
+            updated++
+          } else {
+            // Записи действительно нет - создаем новую
+            await prisma.order.create({
+              data: {
+                branch: rawBranch,
+                orderType: rawOrderType,
+                orderNumber: rawOrderNumber,
+                kisNumber: rawKisNumber || '',
+                exportDate: finalExportDate,
+                shipmentDate: finalShipmentDate,
+                status: rawStatus,
+                packagesPlanned: packagesPlanned,
+                packagesActual: packagesActual,
+                linesPlanned: linesPlanned,
+                linesActual: linesActual,
+                counterparty: rawCounterparty || 'Не указан',
+                acceptanceDate: finalAcceptanceDate,
+                clientTIN: clientTIN,
+                // createdAt и updatedAt будут созданы автоматически
+              },
+            })
+            imported++
+          }
+        }
 
         // Показываем прогресс каждые 1000 записей
         if ((i + 1) % 1000 === 0) {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           const rate = ((i + 1) / (Date.now() - startTime)) * 1000
           const remaining = Math.round((records.length - i - 1) / rate)
-          console.log(`Обработано ${i + 1}/${records.length} записей (${((i + 1) / records.length * 100).toFixed(1)}%) | Импортировано: ${imported} | Скорость: ${rate.toFixed(0)} зап/сек | Осталось: ~${remaining} сек`)
+          console.log(`Обработано ${i + 1}/${records.length} записей (${((i + 1) / records.length * 100).toFixed(1)}%) | Импортировано: ${imported} | Обновлено: ${updated} | Скорость: ${rate.toFixed(0)} зап/сек | Осталось: ~${remaining} сек`)
         }
-
-        imported++
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error)
         console.error(`Строка ${i + 2}: ошибка при импорте:`, errorMessage)
@@ -268,10 +357,49 @@ async function main() {
       }
     }
 
+    // Удаляем записи, которых нет в CSV
+    console.log('\nУдаляем записи, отсутствующие в CSV...')
+    let deleted = 0
+    for (const [key, order] of existingOrdersMap.entries()) {
+      if (!csvOrderKeys.has(key)) {
+        await prisma.order.delete({
+          where: { id: order.id },
+        })
+        deleted++
+      }
+    }
+    console.log(`Удалено ${deleted} записей, отсутствующих в CSV\n`)
+
     console.log('\n=== Результаты импорта ===')
-    console.log(`Импортировано: ${imported}`)
+    console.log(`Создано новых: ${imported}`)
+    console.log(`Обновлено: ${updated}`)
+    console.log(`Удалено: ${deleted}`)
     console.log(`Пропущено: ${skipped}`)
     console.log(`Ошибок: ${errors}`)
+    
+    // Сохраняем метаданные импорта
+    const importTime = new Date()
+    await prisma.importMetadata.upsert({
+      where: { importType: 'orders' },
+      update: {
+        lastImportAt: importTime,
+        recordsImported: imported,
+        recordsUpdated: updated,
+        recordsDeleted: deleted,
+        recordsSkipped: skipped,
+        errors: errors,
+      },
+      create: {
+        importType: 'orders',
+        lastImportAt: importTime,
+        recordsImported: imported,
+        recordsUpdated: updated,
+        recordsDeleted: deleted,
+        recordsSkipped: skipped,
+        errors: errors,
+      },
+    })
+    console.log(`\nМетаданные импорта сохранены: ${importTime.toISOString()}`)
     
     // Детальный отчет о пропущенных записях (первые 50)
     if (skippedRecords.length > 0) {

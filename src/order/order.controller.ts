@@ -30,6 +30,12 @@ export class UserOrderController {
     return this.orderService.findAll(userId, userRole, query.clientTIN)
   }
 
+  @Get('meta/last-import')
+  @Auth()
+  async getLastImportInfo() {
+    return this.orderService.getLastImportInfo()
+  }
+
   @Get(':id')
   @Auth()
   async findOne(@Param('id') id: string, @CurrentUser('id') userId: string, @CurrentUser('role') userRole: string) {
