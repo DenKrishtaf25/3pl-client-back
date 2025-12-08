@@ -17,8 +17,9 @@ export class OrderDto {
   @IsDateString()
   exportDate: string
 
+  @IsOptional()
   @IsDateString()
-  shipmentDate: string
+  shipmentDate?: string
 
   @IsString()
   status: string
@@ -38,8 +39,9 @@ export class OrderDto {
   @IsString()
   counterparty: string
 
+  @IsOptional()
   @IsDateString()
-  acceptanceDate: string
+  acceptanceDate?: string
 
   @IsString()
   clientTIN: string

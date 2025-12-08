@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, UsePipes, ValidationPipe, Query } from '@nestjs/common'
+import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, UsePipes, ValidationPipe, Query, UseInterceptors } from '@nestjs/common'
 import { OrderService } from './order.service'
 import { OrderDto, UpdateOrderDto, FindOrderDto } from './order.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt.guard'
@@ -6,8 +6,10 @@ import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
 import { CurrentUser } from '../auth/decorators/user.decorator'
 import { Auth } from '../auth/decorators/auth.decorator'
+import { OrderDateInterceptor } from './order-date.interceptor'
 
 @Controller('orders')
+@UseInterceptors(OrderDateInterceptor)
 export class UserOrderController {
   constructor(private readonly orderService: OrderService) {}
 
@@ -45,6 +47,7 @@ export class UserOrderController {
 
 @Controller('admin/orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@UseInterceptors(OrderDateInterceptor)
 export class AdminOrderController {
   constructor(private readonly orderService: OrderService) {}
 

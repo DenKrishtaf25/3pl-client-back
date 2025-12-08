@@ -36,10 +36,11 @@ export class OrderService {
         finalTINs = requestedTINs
       } else {
         // Если фильтр не указан - показываем все
-        return this.prisma.order.findMany({
+        const orders = await this.prisma.order.findMany({
           include: { client: true },
           orderBy: { createdAt: 'desc' }
         })
+        return orders
       }
     } else {
       // Обычный пользователь
@@ -62,7 +63,7 @@ export class OrderService {
       }
     }
 
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: {
         clientTIN: {
           in: finalTINs
@@ -71,6 +72,8 @@ export class OrderService {
       include: { client: true },
       orderBy: { createdAt: 'desc' }
     })
+
+    return orders
   }
 
   async findAllWithPagination(dto: FindOrderDto, userId: string, userRole: string) {
@@ -422,14 +425,14 @@ export class OrderService {
         orderNumber: dto.orderNumber,
         kisNumber: dto.kisNumber,
         exportDate: new Date(dto.exportDate),
-        shipmentDate: new Date(dto.shipmentDate),
+        shipmentDate: dto.shipmentDate ? new Date(dto.shipmentDate) : null,
         status: dto.status,
         packagesPlanned: dto.packagesPlanned,
         packagesActual: dto.packagesActual,
         linesPlanned: dto.linesPlanned,
         linesActual: dto.linesActual,
         counterparty: dto.counterparty,
-        acceptanceDate: new Date(dto.acceptanceDate),
+        acceptanceDate: dto.acceptanceDate ? new Date(dto.acceptanceDate) : null,
         clientTIN: dto.clientTIN
       },
       include: { client: true }
@@ -480,14 +483,14 @@ export class OrderService {
         ...(dto.orderNumber && { orderNumber: dto.orderNumber }),
         ...(dto.kisNumber && { kisNumber: dto.kisNumber }),
         ...(dto.exportDate && { exportDate: new Date(dto.exportDate) }),
-        ...(dto.shipmentDate && { shipmentDate: new Date(dto.shipmentDate) }),
+        ...(dto.shipmentDate !== undefined && { shipmentDate: dto.shipmentDate ? new Date(dto.shipmentDate) : null }),
         ...(dto.status && { status: dto.status }),
         ...(dto.packagesPlanned !== undefined && { packagesPlanned: dto.packagesPlanned }),
         ...(dto.packagesActual !== undefined && { packagesActual: dto.packagesActual }),
         ...(dto.linesPlanned !== undefined && { linesPlanned: dto.linesPlanned }),
         ...(dto.linesActual !== undefined && { linesActual: dto.linesActual }),
         ...(dto.counterparty && { counterparty: dto.counterparty }),
-        ...(dto.acceptanceDate && { acceptanceDate: new Date(dto.acceptanceDate) }),
+        ...(dto.acceptanceDate !== undefined && { acceptanceDate: dto.acceptanceDate ? new Date(dto.acceptanceDate) : null }),
         ...(dto.clientTIN && { clientTIN: dto.clientTIN })
       },
       include: { client: true }

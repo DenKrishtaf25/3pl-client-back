@@ -242,10 +242,11 @@ async function main() {
         const shipmentDate = parseDate(rawShipmentDate)
         const acceptanceDate = parseDate(rawAcceptanceDate)
 
-        // Для обязательных дат в схеме используем текущую дату если нет данных
+        // exportDate обязательное поле, для пустого используем текущую дату
+        // shipmentDate и acceptanceDate - опциональные, оставляем null если пусто
         const finalExportDate = exportDate || new Date()
-        const finalShipmentDate = shipmentDate || new Date()
-        const finalAcceptanceDate = acceptanceDate || new Date()
+        const finalShipmentDate = shipmentDate || null
+        const finalAcceptanceDate = acceptanceDate || null
 
         // Парсим числовые поля
         const packagesPlanned = parseInteger(rawPackagesPlanned)
