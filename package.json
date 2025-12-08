@@ -28,6 +28,8 @@
         "import:orders:prod": "node dist/prisma/import-orders.js",
         "import:analytics": "ts-node prisma/import-analytics.ts",
         "import:analytics:prod": "node dist/prisma/import-analytics.js",
+        "import:finance": "ts-node prisma/import-finance.ts",
+        "import:finance:prod": "node dist/prisma/import-finance.js",
         "check-duplicates:stock": "ts-node prisma/check-duplicates-stock.ts",
         "check-duplicates:stock:prod": "node dist/prisma/check-duplicates-stock.js",
         "remove-duplicates:stock": "ts-node prisma/check-duplicates-stock.ts --delete",

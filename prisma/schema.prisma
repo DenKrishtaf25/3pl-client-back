@@ -41,6 +41,7 @@ model Client {
   registries Registry[]
   orders     Order[]
   analytics  Analytics[]
+  finances   Finance[]
 
   users User[] @relation("UserClients")
 
@@ -136,12 +137,31 @@ model Analytics {
   @@map("analytics")
 }
 
+model Finance {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branch        String
+  counterparty  String
+  date          DateTime
+  orderNumber   String   @map("order_number")
+  amount        Decimal  @db.Decimal(15, 2)
+  status        String
+  comment       String?
+
+  client    Client @relation(fields: [clientTIN], references: [TIN])
+  clientTIN String @map("client_tin")
+
+  @@map("finance")
+}
+
 model ImportMetadata {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  importType String @unique // 'stock', 'registry', 'orders', 'clients', 'analytics'
+  importType String @unique // 'stock', 'registry', 'orders', 'clients', 'analytics', 'finance'
   lastImportAt DateTime @map("last_import_at")
   recordsImported Int @map("records_imported")
   recordsUpdated Int @map("records_updated")
