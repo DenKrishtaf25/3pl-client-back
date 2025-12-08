@@ -8,6 +8,7 @@ import { RegistryModule } from './registry/registry.module'
 import { OrderModule } from './order/order.module'
 import { AnalyticsModule } from './analytics/analytics.module'
 import { FinanceModule } from './finance/finance.module'
+import { ComplaintsModule } from './complaints/complaints.module'
 import { SchedulerModule } from './scheduler/scheduler.module'
 
 @Module({
@@ -21,6 +22,7 @@ import { SchedulerModule } from './scheduler/scheduler.module'
     OrderModule,
     AnalyticsModule,
     FinanceModule,
+    ComplaintsModule,
     SchedulerModule,
   ],
 })
