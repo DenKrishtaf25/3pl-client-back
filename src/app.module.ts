@@ -6,6 +6,7 @@ import { ClientModule } from './client/client.module'
 import { StockModule } from './stock/stock.module'
 import { RegistryModule } from './registry/registry.module'
 import { OrderModule } from './order/order.module'
+import { AnalyticsModule } from './analytics/analytics.module'
 import { SchedulerModule } from './scheduler/scheduler.module'
 
 @Module({
@@ -17,6 +18,7 @@ import { SchedulerModule } from './scheduler/scheduler.module'
     StockModule,
     RegistryModule,
     OrderModule,
+    AnalyticsModule,
     SchedulerModule,
   ],
 })
