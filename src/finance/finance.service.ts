@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
-import { FinanceDto, UpdateFinanceDto, FindFinanceDto } from './finance.dto'
+import { FinanceDto, UpdateFinanceDto, FindFinanceDto, FinanceStatusStatsDto } from './finance.dto'
 import { Prisma } from '@prisma/client'
 
 @Injectable()
@@ -477,6 +477,85 @@ export class FinanceService {
       recordsSkipped: metadata.recordsSkipped,
       errors: metadata.errors,
     }
+  }
+
+  async getStatusStats(dto: FinanceStatusStatsDto, userId: string, userRole: string) {
+    // Получаем список клиентов пользователя
+    const userClientTINs = await this.getUserClientTINs(userId)
+
+    // Определяем финальный список TIN для фильтрации
+    let allowedTINs: string[] = []
+
+    if (userRole === 'ADMIN') {
+      // Админ может видеть все Finance
+      allowedTINs = [] // Пустой массив = все клиенты
+    } else {
+      // Обычный пользователь
+      if (userClientTINs.length === 0) {
+        return []
+      }
+      allowedTINs = userClientTINs
+    }
+
+    // Формируем условие для фильтрации по клиентам
+    const where: Prisma.FinanceWhereInput = {}
+    if (allowedTINs.length > 0) {
+      where.clientTIN = { in: allowedTINs }
+    }
+
+    // Получаем все записи Finance с нужными полями
+    const finances = await this.prisma.finance.findMany({
+      where,
+      select: {
+        status: true,
+        amount: true,
+      }
+    })
+
+    // Группируем по статусам
+    const statusMap = new Map<string, { amount: number; count: number }>()
+
+    finances.forEach(finance => {
+      const status = finance.status || 'Без статуса'
+      const amount = Number(finance.amount) || 0
+
+      if (statusMap.has(status)) {
+        const existing = statusMap.get(status)!
+        statusMap.set(status, {
+          amount: existing.amount + amount,
+          count: existing.count + 1,
+        })
+      } else {
+        statusMap.set(status, {
+          amount,
+          count: 1,
+        })
+      }
+    })
+
+    // Преобразуем в массив
+    const stats = Array.from(statusMap.entries()).map(([status, data]) => ({
+      status,
+      amount: data.amount,
+      count: data.count,
+    }))
+
+    // Сортировка
+    const sortBy = dto.sortBy || 'amount'
+    const sortOrder = dto.sortOrder || 'desc'
+
+    stats.sort((a, b) => {
+      let comparison = 0
+      if (sortBy === 'amount') {
+        comparison = a.amount - b.amount
+      } else if (sortBy === 'count') {
+        comparison = a.count - b.count
+      }
+
+      return sortOrder === 'asc' ? comparison : -comparison
+    })
+
+    return stats
   }
 }
 

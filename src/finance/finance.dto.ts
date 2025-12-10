@@ -129,3 +129,13 @@ export class FindFinanceDto {
   amountTo?: number
 }
 
+export class FinanceStatusStatsDto {
+  @IsOptional()
+  @IsEnum(['amount', 'count'])
+  sortBy?: 'amount' | 'count'
+
+  @IsOptional()
+  @IsEnum(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc'
+}
+

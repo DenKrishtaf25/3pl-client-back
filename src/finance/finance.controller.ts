@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, UsePipes, ValidationPipe, Query } from '@nestjs/common'
 import { FinanceService } from './finance.service'
-import { FinanceDto, UpdateFinanceDto, FindFinanceDto } from './finance.dto'
+import { FinanceDto, UpdateFinanceDto, FindFinanceDto, FinanceStatusStatsDto } from './finance.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
@@ -33,6 +33,17 @@ export class UserFinanceController {
   @Auth()
   async getLastImportInfo() {
     return this.financeService.getLastImportInfo()
+  }
+
+  @Get('stats/status')
+  @Auth()
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async getStatusStats(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: string,
+    @Query() query: FinanceStatusStatsDto
+  ) {
+    return this.financeService.getStatusStats(query, userId, userRole)
   }
 
   @Get(':id')
