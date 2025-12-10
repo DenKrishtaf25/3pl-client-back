@@ -19,12 +19,15 @@ export class UserStockController {
     @CurrentUser('role') userRole: string,
     @Query() query: FindStockDto
   ) {
-    // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder) {
-      return this.stockService.findAllWithPagination(query, userId, userRole)
-    }
-    // Для обратной совместимости - старый метод
-    return this.stockService.findAll(userId, userRole, query.clientTIN)
+    // Всегда используем пагинацию по умолчанию для предотвращения таймаутов
+    const page = query.page || 1
+    const limit = query.limit || 20
+    
+    return this.stockService.findAllWithPagination(
+      { ...query, page, limit },
+      userId,
+      userRole
+    )
   }
 
   @Get('meta/last-import')
@@ -53,12 +56,15 @@ export class AdminStockController {
     @CurrentUser('role') userRole: string,
     @Query() query: FindStockDto
   ) {
-    // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder) {
-      return this.stockService.findAllWithPagination(query, userId, userRole)
-    }
-    // Для обратной совместимости - старый метод
-    return this.stockService.findAll(userId, userRole, query.clientTIN)
+    // Всегда используем пагинацию по умолчанию для предотвращения таймаутов
+    const page = query.page || 1
+    const limit = query.limit || 20
+    
+    return this.stockService.findAllWithPagination(
+      { ...query, page, limit },
+      userId,
+      userRole
+    )
   }
 
   @Get(':id')

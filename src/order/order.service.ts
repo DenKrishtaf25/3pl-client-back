@@ -35,10 +35,12 @@ export class OrderService {
         // Если указан фильтр - используем его
         finalTINs = requestedTINs
       } else {
-        // Если фильтр не указан - показываем все
+        // Если фильтр не указан - показываем все, но с лимитом для безопасности
+        const MAX_RECORDS = 1000
         const orders = await this.prisma.order.findMany({
           include: { client: true },
-          orderBy: { createdAt: 'desc' }
+          orderBy: { createdAt: 'desc' },
+          take: MAX_RECORDS
         })
         return orders
       }
@@ -63,6 +65,8 @@ export class OrderService {
       }
     }
 
+    // Добавляем лимит для безопасности даже в старом методе
+    const MAX_RECORDS = 1000
     const orders = await this.prisma.order.findMany({
       where: {
         clientTIN: {
@@ -70,7 +74,8 @@ export class OrderService {
         }
       },
       include: { client: true },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: MAX_RECORDS
     })
 
     return orders

@@ -21,15 +21,15 @@ export class UserOrderController {
     @CurrentUser('role') userRole: string,
     @Query() query: FindOrderDto
   ) {
-    // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
-        query.acceptanceDateFrom || query.acceptanceDateTo || 
-        query.exportDateFrom || query.exportDateTo || 
-        query.shipmentDateFrom || query.shipmentDateTo) {
-      return this.orderService.findAllWithPagination(query, userId, userRole)
-    }
-    // Для обратной совместимости - старый метод
-    return this.orderService.findAll(userId, userRole, query.clientTIN)
+    // Всегда используем пагинацию по умолчанию для предотвращения таймаутов
+    const page = query.page || 1
+    const limit = query.limit || 20
+    
+    return this.orderService.findAllWithPagination(
+      { ...query, page, limit },
+      userId,
+      userRole
+    )
   }
 
   @Get('meta/last-import')
@@ -59,15 +59,15 @@ export class AdminOrderController {
     @CurrentUser('role') userRole: string,
     @Query() query: FindOrderDto
   ) {
-    // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
-        query.acceptanceDateFrom || query.acceptanceDateTo || 
-        query.exportDateFrom || query.exportDateTo || 
-        query.shipmentDateFrom || query.shipmentDateTo) {
-      return this.orderService.findAllWithPagination(query, userId, userRole)
-    }
-    // Для обратной совместимости - старый метод
-    return this.orderService.findAll(userId, userRole, query.clientTIN)
+    // Всегда используем пагинацию по умолчанию для предотвращения таймаутов
+    const page = query.page || 1
+    const limit = query.limit || 20
+    
+    return this.orderService.findAllWithPagination(
+      { ...query, page, limit },
+      userId,
+      userRole
+    )
   }
 
   @Get(':id')

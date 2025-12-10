@@ -35,10 +35,12 @@ export class StockService {
         // Если указан фильтр - используем его
         finalTINs = requestedTINs
       } else {
-        // Если фильтр не указан - показываем все
+        // Если фильтр не указан - показываем все, но с лимитом для безопасности
+        const MAX_RECORDS = 1000
         return this.prisma.stock.findMany({
           include: { client: true },
-          orderBy: { createdAt: 'desc' }
+          orderBy: { createdAt: 'desc' },
+          take: MAX_RECORDS
         })
       }
     } else {
@@ -62,6 +64,8 @@ export class StockService {
       }
     }
 
+    // Добавляем лимит для безопасности даже в старом методе
+    const MAX_RECORDS = 1000
     return this.prisma.stock.findMany({
       where: {
         clientTIN: {
@@ -69,7 +73,8 @@ export class StockService {
         }
       },
       include: { client: true },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: MAX_RECORDS
     })
   }
 

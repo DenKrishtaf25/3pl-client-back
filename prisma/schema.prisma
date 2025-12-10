@@ -62,6 +62,8 @@ model Stock {
   client    Client @relation(fields: [clientTIN], references: [TIN])
   clientTIN String @map("client_tin")
 
+  @@index([clientTIN])
+  @@index([createdAt])
   @@map("stock")
 }
 
@@ -91,6 +93,11 @@ model Registry {
   client    Client @relation(fields: [clientTIN], references: [TIN])
   clientTIN String @map("client_tin")
 
+  @@index([clientTIN])
+  @@index([createdAt])
+  @@index([shipmentPlan])
+  @@index([unloadingDate])
+  @@index([departureDate])
   @@map("registry")
 }
 
@@ -116,6 +123,11 @@ model Order {
   client    Client @relation(fields: [clientTIN], references: [TIN])
   clientTIN String @map("client_tin")
 
+  @@index([clientTIN])
+  @@index([createdAt])
+  @@index([acceptanceDate])
+  @@index([exportDate])
+  @@index([shipmentDate])
   @@map("order")
 }
 
@@ -135,6 +147,8 @@ model Analytics {
   clientTIN String @map("client_tin")
 
   @@unique([branch, clientTIN, date])
+  @@index([clientTIN])
+  @@index([date])
   @@map("analytics")
 }
 
@@ -154,6 +168,8 @@ model Finance {
   client    Client @relation(fields: [clientTIN], references: [TIN])
   clientTIN String @map("client_tin")
 
+  @@index([clientTIN])
+  @@index([date])
   @@map("finance")
 }
 
@@ -173,6 +189,8 @@ model Complaint {
   clientRelation Client @relation(fields: [clientTIN], references: [TIN])
   clientTIN      String @map("client_tin")
 
+  @@index([clientTIN])
+  @@index([creationDate])
   @@map("complaint")
 }
 

@@ -19,15 +19,15 @@ export class UserRegistryController {
     @CurrentUser('role') userRole: string,
     @Query() query: FindRegistryDto
   ) {
-    // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
-        query.shipmentPlanFrom || query.shipmentPlanTo || 
-        query.unloadingDateFrom || query.unloadingDateTo || 
-        query.departureDateFrom || query.departureDateTo) {
-      return this.registryService.findAllWithPagination(query, userId, userRole)
-    }
-    // Для обратной совместимости - старый метод
-    return this.registryService.findAll(userId, userRole, query.clientTIN)
+    // Всегда используем пагинацию по умолчанию для предотвращения таймаутов
+    const page = query.page || 1
+    const limit = query.limit || 20
+    
+    return this.registryService.findAllWithPagination(
+      { ...query, page, limit },
+      userId,
+      userRole
+    )
   }
 
   @Get('meta/last-import')
@@ -56,15 +56,15 @@ export class AdminRegistryController {
     @CurrentUser('role') userRole: string,
     @Query() query: FindRegistryDto
   ) {
-    // Если переданы параметры фильтрации/пагинации - используем новый метод
-    if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
-        query.shipmentPlanFrom || query.shipmentPlanTo || 
-        query.unloadingDateFrom || query.unloadingDateTo || 
-        query.departureDateFrom || query.departureDateTo) {
-      return this.registryService.findAllWithPagination(query, userId, userRole)
-    }
-    // Для обратной совместимости - старый метод
-    return this.registryService.findAll(userId, userRole, query.clientTIN)
+    // Всегда используем пагинацию по умолчанию для предотвращения таймаутов
+    const page = query.page || 1
+    const limit = query.limit || 20
+    
+    return this.registryService.findAllWithPagination(
+      { ...query, page, limit },
+      userId,
+      userRole
+    )
   }
 
   @Get(':id')
