@@ -50,19 +50,43 @@ async function main() {
     let fileContent: string
     const buffer = readFileSync(csvFilePath)
     
+    // Убираем BOM (Byte Order Mark) если есть (для UTF-8-sig)
+    let bufferWithoutBOM = buffer
+    if (buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+      bufferWithoutBOM = buffer.slice(3)
+      console.log('Обнаружен UTF-8 BOM, удаляем...')
+    } else if (buffer[0] === 0xFF && buffer[1] === 0xFE) {
+      bufferWithoutBOM = buffer.slice(2)
+      console.log('Обнаружен UTF-16 LE BOM, удаляем...')
+    } else if (buffer[0] === 0xFE && buffer[1] === 0xFF) {
+      bufferWithoutBOM = buffer.slice(2)
+      console.log('Обнаружен UTF-16 BE BOM, удаляем...')
+    }
+    
     // Пробуем сначала Windows-1251 (обычно для русских CSV файлов из Excel)
     try {
-      fileContent = iconv.decode(buffer, 'win1251')
+      fileContent = iconv.decode(bufferWithoutBOM, 'win1251')
       if (!fileContent || fileContent.length === 0) {
         throw new Error('Пустой файл после декодирования')
       }
+      // Проверяем, что русские символы читаются правильно
+      if (!fileContent.includes('Склад') && !fileContent.includes('ИНН')) {
+        throw new Error('Русские символы не читаются правильно в win1251')
+      }
+      console.log('Файл успешно декодирован как Windows-1251')
     } catch (error) {
       // Если не получилось с Windows-1251, пробуем UTF-8
       try {
-        fileContent = buffer.toString('utf-8')
+        fileContent = bufferWithoutBOM.toString('utf-8')
+        // Проверяем, что русские символы читаются правильно
+        if (!fileContent.includes('Склад') && !fileContent.includes('ИНН')) {
+          throw new Error('Русские символы не читаются правильно в UTF-8')
+        }
+        console.log('Файл успешно декодирован как UTF-8')
       } catch (e) {
         // Если и это не помогло, пробуем latin1 как последний вариант
-        fileContent = buffer.toString('latin1')
+        fileContent = bufferWithoutBOM.toString('latin1')
+        console.log('Файл декодирован как latin1 (возможны проблемы с русскими символами)')
       }
     }
 
@@ -270,10 +294,8 @@ async function main() {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
           const rate = ((i + 1) / (Date.now() - startTime)) * 1000
           const remaining = Math.round((records.length - i - 1) / rate)
-          console.log(`Обработано ${i + 1}/${records.length} записей (${((i + 1) / records.length * 100).toFixed(1)}%) | Импортировано: ${imported} | Скорость: ${rate.toFixed(0)} зап/сек | Осталось: ~${remaining} сек`)
+          console.log(`Обработано ${i + 1}/${records.length} записей (${((i + 1) / records.length * 100).toFixed(1)}%) | Импортировано: ${imported} | Обновлено: ${updated} | Скорость: ${rate.toFixed(0)} зап/сек | Осталось: ~${remaining} сек`)
         }
-
-        imported++
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error)
         console.error(`Строка ${i + 2}: ошибка при импорте:`, errorMessage)
