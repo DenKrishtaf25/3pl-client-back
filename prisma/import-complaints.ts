@@ -15,6 +15,8 @@ interface ComplaintCsvRow {
   ТипПретензии: string
   Статус: string
   Подтверждение: string
+  'Крайний срок'?: string  // Новая колонка
+  'Дата завершения'?: string  // Новая колонка
 }
 
 // Функция для очистки значения
@@ -23,30 +25,52 @@ function cleanValue(value: string): string {
   return value.trim().replace(/;+$/, '')
 }
 
-// Функция для парсинга даты (формат: DD.MM.YYYY HH:mm или DD.MM.YYYY)
+// Функция для парсинга даты (поддерживает DD.MM.YYYY HH:mm, DD.MM.YYYY и YYYY-MM-DD)
 function parseDate(dateStr: string): Date | null {
   if (!dateStr || !dateStr.trim()) return null
   
   const cleaned = dateStr.trim()
   
+  // Пробуем формат ISO: YYYY-MM-DD или YYYY-MM-DD HH:mm
+  const isoMatch = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/)
+  if (isoMatch) {
+    const [, year, month, day, hour = '0', minute = '0', second = '0'] = isoMatch
+    const date = new Date(
+      parseInt(year),
+      parseInt(month) - 1,
+      parseInt(day),
+      parseInt(hour),
+      parseInt(minute),
+      parseInt(second)
+    )
+    if (!isNaN(date.getTime())) {
+      return date
+    }
+  }
+  
   // Формат: DD.MM.YYYY HH:mm или DD.MM.YYYY
-  const dateMatch = cleaned.match(/(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/)
+  const dateMatch = cleaned.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/)
+  if (dateMatch) {
+    const [, day, month, year, hour = '0', minute = '0'] = dateMatch
+    const date = new Date(
+      parseInt(year),
+      parseInt(month) - 1,
+      parseInt(day),
+      parseInt(hour),
+      parseInt(minute)
+    )
+    if (!isNaN(date.getTime())) {
+      return date
+    }
+  }
   
-  if (!dateMatch) return null
+  // Пробуем встроенный парсер Date (может распознать другие форматы)
+  const parsedDate = new Date(cleaned)
+  if (!isNaN(parsedDate.getTime())) {
+    return parsedDate
+  }
   
-  const [, day, month, year, hour = '0', minute = '0'] = dateMatch
-  const date = new Date(
-    parseInt(year),
-    parseInt(month) - 1,
-    parseInt(day),
-    parseInt(hour),
-    parseInt(minute)
-  )
-  
-  // Проверяем, что дата валидна
-  if (isNaN(date.getTime())) return null
-  
-  return date
+  return null
 }
 
 // Функция для парсинга boolean из строки (0 или 1)
@@ -122,6 +146,9 @@ async function main() {
     })
 
     // Отладочный вывод: показываем названия колонок из первой записи
+    let deadlineColumnName: string | null = null
+    let completionDateColumnName: string | null = null
+    
     if (records.length > 0) {
       const columnNames = Object.keys(records[0])
       console.log('\nНайденные колонки в CSV:', columnNames)
@@ -130,6 +157,41 @@ async function main() {
       // Проверяем, что все необходимые колонки присутствуют
       const requiredColumns = ['Филиал', 'Клиент', 'ИНН', 'ДатаСоздания', 'НомерРекламации', 'ТипПретензии', 'Статус', 'Подтверждение']
       const missingColumns = requiredColumns.filter(col => !columnNames.includes(col))
+      
+      // Проверяем наличие новых колонок (опциональных)
+      const findColumn = (variants: string[]): string | null => {
+        for (const variant of variants) {
+          const found = columnNames.find(col => {
+            const colTrimmed = col.trim()
+            const variantTrimmed = variant.trim()
+            // Точное совпадение
+            if (colTrimmed === variantTrimmed) return true
+            // Без учета регистра
+            if (colTrimmed.toLowerCase() === variantTrimmed.toLowerCase()) return true
+            // Без пробелов и подчеркиваний
+            const colNormalized = colTrimmed.replace(/[\s_]/g, '').toLowerCase()
+            const variantNormalized = variantTrimmed.replace(/[\s_]/g, '').toLowerCase()
+            if (colNormalized === variantNormalized) return true
+            return false
+          })
+          if (found) return found
+        }
+        return null
+      }
+      
+      deadlineColumnName = findColumn(['Крайний срок', 'КрайнийСрок', 'крайний срок'])
+      completionDateColumnName = findColumn(['Дата завершения', 'ДатаЗавершения', 'дата завершения', 'дата_завершения'])
+      
+      if (deadlineColumnName) {
+        console.log(`Обнаружена колонка для крайнего срока: "${deadlineColumnName}"`)
+      } else {
+        console.log('Колонка для крайнего срока не найдена (будет пропущена)')
+      }
+      if (completionDateColumnName) {
+        console.log(`Обнаружена колонка для даты завершения: "${completionDateColumnName}"`)
+      } else {
+        console.log('Колонка для даты завершения не найдена (будет пропущена)')
+      }
       
       if (missingColumns.length > 0) {
         console.error('\nОШИБКА: Отсутствуют необходимые колонки:', missingColumns)
@@ -205,6 +267,24 @@ async function main() {
         const rawComplaintType = record.ТипПретензии ? cleanValue(String(record.ТипПретензии)) : ''
         const rawStatus = record.Статус ? cleanValue(String(record.Статус)) : ''
         const rawConfirmation = record.Подтверждение ? String(record.Подтверждение) : '0'
+        
+        // Получаем значения новых дат используя найденные названия колонок
+        let rawDeadline: string | null = null
+        let rawCompletionDate: string | null = null
+        
+        if (deadlineColumnName && record[deadlineColumnName as keyof ComplaintCsvRow]) {
+          const value = String(record[deadlineColumnName as keyof ComplaintCsvRow] || '').trim()
+          if (value && value !== '' && value.toLowerCase() !== 'null' && value !== '-' && value !== 'NULL') {
+            rawDeadline = value
+          }
+        }
+        
+        if (completionDateColumnName && record[completionDateColumnName as keyof ComplaintCsvRow]) {
+          const value = String(record[completionDateColumnName as keyof ComplaintCsvRow] || '').trim()
+          if (value && value !== '' && value.toLowerCase() !== 'null' && value !== '-' && value !== 'NULL') {
+            rawCompletionDate = value
+          }
+        }
 
         // Проверяем обязательные поля
         if (!rawBranch) {
@@ -281,6 +361,24 @@ async function main() {
         // Парсим подтверждение
         const confirmation = parseBoolean(rawConfirmation)
 
+        // Парсим новые даты (опционально)
+        let deadline: Date | null = null
+        let completionDate: Date | null = null
+        
+        if (rawDeadline) {
+          deadline = parseDate(rawDeadline)
+          if (!deadline && i < 5) {
+            console.log(`Предупреждение: не удалось распарсить крайний срок "${rawDeadline}" в строке ${i + 2}`)
+          }
+        }
+        
+        if (rawCompletionDate) {
+          completionDate = parseDate(rawCompletionDate)
+          if (!completionDate && i < 5) {
+            console.log(`Предупреждение: не удалось распарсить дату завершения "${rawCompletionDate}" в строке ${i + 2}`)
+          }
+        }
+
         // Создаем ключ для поиска
         const key = complaintKey(rawBranch, rawComplaintNumber, clientTIN, creationDate)
         csvComplaintKeys.add(key)
@@ -300,6 +398,8 @@ async function main() {
               complaintType: rawComplaintType || 'Не указан',
               status: rawStatus,
               confirmation: confirmation,
+              deadline: deadline,
+              completionDate: completionDate,
             },
           })
           updated++
@@ -326,6 +426,8 @@ async function main() {
                 complaintType: rawComplaintType || 'Не указан',
                 status: rawStatus,
                 confirmation: confirmation,
+                deadline: deadline,
+                completionDate: completionDate,
               },
             })
             updated++
@@ -340,6 +442,8 @@ async function main() {
                 complaintType: rawComplaintType || 'Не указан',
                 status: rawStatus,
                 confirmation: confirmation,
+                deadline: deadline,
+                completionDate: completionDate,
                 clientTIN: clientTIN,
               },
             })

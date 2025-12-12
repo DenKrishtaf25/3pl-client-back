@@ -23,6 +23,14 @@ export class ComplaintDto {
   @IsBoolean()
   confirmation: boolean
 
+  @IsOptional()
+  @IsDateString()
+  deadline?: string
+
+  @IsOptional()
+  @IsDateString()
+  completionDate?: string
+
   @IsString()
   clientTIN: string
 }
@@ -55,6 +63,14 @@ export class UpdateComplaintDto {
   @IsOptional()
   @IsBoolean()
   confirmation?: boolean
+
+  @IsOptional()
+  @IsDateString()
+  deadline?: string
+
+  @IsOptional()
+  @IsDateString()
+  completionDate?: string
 
   @IsOptional()
   @IsString()
@@ -105,8 +121,8 @@ export class FindComplaintDto {
   limit?: number
 
   @IsOptional()
-  @IsEnum(['complaintNumber', 'creationDate', 'status'])
-  sortBy?: 'complaintNumber' | 'creationDate' | 'status'
+  @IsEnum(['complaintNumber', 'creationDate', 'status', 'deadline', 'completionDate'])
+  sortBy?: 'complaintNumber' | 'creationDate' | 'status' | 'deadline' | 'completionDate'
 
   @IsOptional()
   @IsEnum(['asc', 'desc'])
@@ -116,7 +132,7 @@ export class FindComplaintDto {
   @IsString()
   clientTIN?: string
 
-  // Фильтры по дате
+  // Фильтры по дате создания
   @IsOptional()
   @IsDateString()
   dateFrom?: string
@@ -124,5 +140,23 @@ export class FindComplaintDto {
   @IsOptional()
   @IsDateString()
   dateTo?: string
+
+  // Фильтры по крайнему сроку
+  @IsOptional()
+  @IsDateString()
+  deadlineFrom?: string
+
+  @IsOptional()
+  @IsDateString()
+  deadlineTo?: string
+
+  // Фильтры по дате завершения
+  @IsOptional()
+  @IsDateString()
+  completionDateFrom?: string
+
+  @IsOptional()
+  @IsDateString()
+  completionDateTo?: string
 }
 

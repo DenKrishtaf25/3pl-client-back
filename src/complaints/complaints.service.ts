@@ -37,7 +37,28 @@ export class ComplaintsService {
       } else {
         // Если фильтр не указан - показываем все
         return this.prisma.complaint.findMany({
-          include: { clientRelation: true },
+          select: {
+            id: true,
+            branch: true,
+            client: true,
+            creationDate: true,
+            complaintNumber: true,
+            complaintType: true,
+            status: true,
+            confirmation: true,
+            deadline: true,
+            completionDate: true,
+            clientTIN: true,
+            createdAt: true,
+            updatedAt: true,
+            clientRelation: {
+              select: {
+                id: true,
+                TIN: true,
+                companyName: true,
+              }
+            }
+          },
           orderBy: { createdAt: 'desc' }
         })
       }
@@ -68,7 +89,28 @@ export class ComplaintsService {
           in: finalTINs
         }
       },
-      include: { clientRelation: true },
+      select: {
+        id: true,
+        branch: true,
+        client: true,
+        creationDate: true,
+        complaintNumber: true,
+        complaintType: true,
+        status: true,
+        confirmation: true,
+        deadline: true,
+        completionDate: true,
+        clientTIN: true,
+        createdAt: true,
+        updatedAt: true,
+        clientRelation: {
+          select: {
+            id: true,
+            TIN: true,
+            companyName: true,
+          }
+        }
+      },
       orderBy: { createdAt: 'desc' }
     })
   }
@@ -238,7 +280,7 @@ export class ComplaintsService {
       return undefined
     }
 
-    // Фильтрация по дате
+    // Фильтрация по дате создания
     if (dto.dateFrom || dto.dateTo) {
       const dateFilter: { gte?: Date; lte?: Date } = {}
       
@@ -261,12 +303,62 @@ export class ComplaintsService {
       }
     }
 
+    // Фильтрация по крайнему сроку
+    if (dto.deadlineFrom || dto.deadlineTo) {
+      const deadlineFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.deadlineFrom) {
+        const fromDate = parseDateTime(dto.deadlineFrom, false)
+        if (fromDate) {
+          deadlineFilter.gte = fromDate
+        }
+      }
+      
+      if (dto.deadlineTo) {
+        const toDate = parseDateTime(dto.deadlineTo, true)
+        if (toDate) {
+          deadlineFilter.lte = toDate
+        }
+      }
+      
+      if (deadlineFilter.gte || deadlineFilter.lte) {
+        where.deadline = deadlineFilter
+      }
+    }
+
+    // Фильтрация по дате завершения
+    if (dto.completionDateFrom || dto.completionDateTo) {
+      const completionDateFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.completionDateFrom) {
+        const fromDate = parseDateTime(dto.completionDateFrom, false)
+        if (fromDate) {
+          completionDateFilter.gte = fromDate
+        }
+      }
+      
+      if (dto.completionDateTo) {
+        const toDate = parseDateTime(dto.completionDateTo, true)
+        if (toDate) {
+          completionDateFilter.lte = toDate
+        }
+      }
+      
+      if (completionDateFilter.gte || completionDateFilter.lte) {
+        where.completionDate = completionDateFilter
+      }
+    }
+
     // Формируем сортировку
     const orderBy: Prisma.ComplaintOrderByWithRelationInput = {}
     if (dto.sortBy === 'creationDate') {
       orderBy.creationDate = dto.sortOrder || 'desc'
     } else if (dto.sortBy === 'status') {
       orderBy.status = dto.sortOrder || 'asc'
+    } else if (dto.sortBy === 'deadline') {
+      orderBy.deadline = dto.sortOrder || 'desc'
+    } else if (dto.sortBy === 'completionDate') {
+      orderBy.completionDate = dto.sortOrder || 'desc'
     } else {
       orderBy.complaintNumber = dto.sortOrder || 'asc'
     }
@@ -289,6 +381,8 @@ export class ComplaintsService {
         complaintType: true,
         status: true,
         confirmation: true,
+        deadline: true,
+        completionDate: true,
         clientTIN: true,
         createdAt: true,
         updatedAt: true,
@@ -316,7 +410,28 @@ export class ComplaintsService {
   async findOne(id: string, userId: string, userRole: string) {
     const complaint = await this.prisma.complaint.findUnique({
       where: { id },
-      include: { clientRelation: true }
+      select: {
+        id: true,
+        branch: true,
+        client: true,
+        creationDate: true,
+        complaintNumber: true,
+        complaintType: true,
+        status: true,
+        confirmation: true,
+        deadline: true,
+        completionDate: true,
+        clientTIN: true,
+        createdAt: true,
+        updatedAt: true,
+        clientRelation: {
+          select: {
+            id: true,
+            TIN: true,
+            companyName: true,
+          }
+        }
+      }
     })
 
     if (!complaint) {
@@ -366,6 +481,8 @@ export class ComplaintsService {
         complaintType: dto.complaintType,
         status: dto.status,
         confirmation: dto.confirmation,
+        deadline: dto.deadline ? new Date(dto.deadline) : null,
+        completionDate: dto.completionDate ? new Date(dto.completionDate) : null,
         clientTIN: dto.clientTIN
       },
       include: { clientRelation: true }
@@ -418,6 +535,8 @@ export class ComplaintsService {
         ...(dto.complaintType && { complaintType: dto.complaintType }),
         ...(dto.status && { status: dto.status }),
         ...(dto.confirmation !== undefined && { confirmation: dto.confirmation }),
+        ...(dto.deadline !== undefined && { deadline: dto.deadline ? new Date(dto.deadline) : null }),
+        ...(dto.completionDate !== undefined && { completionDate: dto.completionDate ? new Date(dto.completionDate) : null }),
         ...(dto.clientTIN && { clientTIN: dto.clientTIN })
       },
       include: { clientRelation: true }

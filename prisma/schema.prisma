@@ -189,12 +189,16 @@ model Complaint {
   complaintType   String   @map("complaint_type")
   status          String
   confirmation    Boolean  @default(false)
+  deadline        DateTime? @map("deadline")
+  completionDate  DateTime? @map("completion_date")
 
   clientRelation Client @relation(fields: [clientTIN], references: [TIN])
   clientTIN      String @map("client_tin")
 
   @@index([clientTIN])
   @@index([creationDate])
+  @@index([deadline])
+  @@index([completionDate])
   @@map("complaint")
 }
 

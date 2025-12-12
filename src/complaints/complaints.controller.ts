@@ -22,6 +22,8 @@ export class UserComplaintsController {
     // Если переданы параметры фильтрации/пагинации - используем новый метод
     if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
         query.dateFrom || query.dateTo || 
+        query.deadlineFrom || query.deadlineTo ||
+        query.completionDateFrom || query.completionDateTo ||
         query.confirmation !== undefined) {
       return this.complaintsService.findAllWithPagination(query, userId, userRole)
     }
@@ -58,6 +60,8 @@ export class AdminComplaintsController {
     // Если переданы параметры фильтрации/пагинации - используем новый метод
     if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
         query.dateFrom || query.dateTo || 
+        query.deadlineFrom || query.deadlineTo ||
+        query.completionDateFrom || query.completionDateTo ||
         query.confirmation !== undefined) {
       return this.complaintsService.findAllWithPagination(query, userId, userRole)
     }
