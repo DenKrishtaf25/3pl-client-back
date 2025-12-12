@@ -15,6 +15,8 @@ interface FinanceCsvRow {
   СуммаПретензии: string  // В CSV файле используется "СуммаПретензии" вместо "Сумма"
   Статус: string
   Комменатарий?: string  // В CSV файле опечатка: "Комменатарий" вместо "Комментарий"
+  ДатаЗавершения?: string  // Новая колонка
+  ДатаЗакрытия?: string  // Новая колонка
 }
 
 // Функция для очистки значения
@@ -23,30 +25,52 @@ function cleanValue(value: string): string {
   return value.trim().replace(/;+$/, '')
 }
 
-// Функция для парсинга даты (формат: DD.MM.YYYY HH:mm или DD.MM.YYYY)
+// Функция для парсинга даты (поддерживает DD.MM.YYYY HH:mm, DD.MM.YYYY и YYYY-MM-DD)
 function parseDate(dateStr: string): Date | null {
   if (!dateStr || !dateStr.trim()) return null
   
   const cleaned = dateStr.trim()
   
+  // Пробуем формат ISO: YYYY-MM-DD или YYYY-MM-DD HH:mm
+  const isoMatch = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/)
+  if (isoMatch) {
+    const [, year, month, day, hour = '0', minute = '0', second = '0'] = isoMatch
+    const date = new Date(
+      parseInt(year),
+      parseInt(month) - 1,
+      parseInt(day),
+      parseInt(hour),
+      parseInt(minute),
+      parseInt(second)
+    )
+    if (!isNaN(date.getTime())) {
+      return date
+    }
+  }
+  
   // Формат: DD.MM.YYYY HH:mm или DD.MM.YYYY
-  const dateMatch = cleaned.match(/(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/)
+  const dateMatch = cleaned.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/)
+  if (dateMatch) {
+    const [, day, month, year, hour = '0', minute = '0'] = dateMatch
+    const date = new Date(
+      parseInt(year),
+      parseInt(month) - 1,
+      parseInt(day),
+      parseInt(hour),
+      parseInt(minute)
+    )
+    if (!isNaN(date.getTime())) {
+      return date
+    }
+  }
   
-  if (!dateMatch) return null
+  // Пробуем встроенный парсер Date (может распознать другие форматы)
+  const parsedDate = new Date(cleaned)
+  if (!isNaN(parsedDate.getTime())) {
+    return parsedDate
+  }
   
-  const [, day, month, year, hour = '0', minute = '0'] = dateMatch
-  const date = new Date(
-    parseInt(year),
-    parseInt(month) - 1,
-    parseInt(day),
-    parseInt(hour),
-    parseInt(minute)
-  )
-  
-  // Проверяем, что дата валидна
-  if (isNaN(date.getTime())) return null
-  
-  return date
+  return null
 }
 
 // Функция для парсинга суммы (десятичное число)
@@ -128,6 +152,9 @@ async function main() {
     })
 
     // Отладочный вывод: показываем названия колонок из первой записи
+    let completionDateColumnName: string | null = null
+    let closingDateColumnName: string | null = null
+    
     if (records.length > 0) {
       const columnNames = Object.keys(records[0])
       console.log('\nНайденные колонки в CSV:', columnNames)
@@ -136,6 +163,57 @@ async function main() {
       // Проверяем, что все необходимые колонки присутствуют
       const requiredColumns = ['Филиал', 'Клиент', 'ИНН', 'ДатаПоступления', 'КодПретензии', 'СуммаПретензии', 'Статус']
       const missingColumns = requiredColumns.filter(col => !columnNames.includes(col))
+      
+      // Проверяем наличие новых колонок (опциональных) - ищем разные варианты названий
+      const findColumn = (variants: string[]): string | null => {
+        for (const variant of variants) {
+          const found = columnNames.find(col => {
+            const colTrimmed = col.trim()
+            const variantTrimmed = variant.trim()
+            // Точное совпадение
+            if (colTrimmed === variantTrimmed) return true
+            // Без учета регистра
+            if (colTrimmed.toLowerCase() === variantTrimmed.toLowerCase()) return true
+            // Без пробелов и подчеркиваний
+            const colNormalized = colTrimmed.replace(/[\s_]/g, '').toLowerCase()
+            const variantNormalized = variantTrimmed.replace(/[\s_]/g, '').toLowerCase()
+            if (colNormalized === variantNormalized) return true
+            return false
+          })
+          if (found) return found
+        }
+        return null
+      }
+      
+      completionDateColumnName = findColumn([
+        'ДатаЗавершения', 
+        'Дата завершения', 
+        'Дата Завершения',
+        'дата_завершения',
+        'Дата_завершения',
+        'дата завершения'
+      ])
+      closingDateColumnName = findColumn([
+        'ДатаЗакрытия', 
+        'Дата закрытия', 
+        'Дата Закрытия',
+        'ПлановаяДатаЗакрытия',
+        'Плановая Дата Закрытия',
+        'Плановая дата закрытия',
+        'дата_закрытия',
+        'Дата_закрытия'
+      ])
+      
+      if (completionDateColumnName) {
+        console.log(`Обнаружена колонка для даты завершения: "${completionDateColumnName}"`)
+      } else {
+        console.log('Колонка для даты завершения не найдена (будет пропущена)')
+      }
+      if (closingDateColumnName) {
+        console.log(`Обнаружена колонка для даты закрытия: "${closingDateColumnName}"`)
+      } else {
+        console.log('Колонка для даты закрытия не найдена (будет пропущена)')
+      }
       
       if (missingColumns.length > 0) {
         console.error('\nОШИБКА: Отсутствуют необходимые колонки:', missingColumns)
@@ -211,6 +289,29 @@ async function main() {
         const rawAmount = record.СуммаПретензии ? String(record.СуммаПретензии) : '0'  // Используем "СуммаПретензии" вместо "Сумма"
         const rawStatus = record.Статус ? cleanValue(String(record.Статус)) : ''
         const rawComment = record.Комменатарий ? cleanValue(String(record.Комменатарий)) : null  // Используем "Комменатарий" (с опечаткой из CSV)
+        
+        // Получаем значения новых дат используя найденные названия колонок
+        let rawCompletionDate: string | null = null
+        let rawClosingDate: string | null = null
+        
+        if (completionDateColumnName) {
+          const value = String(record[completionDateColumnName as keyof FinanceCsvRow] || '').trim()
+          if (value && value !== '' && value.toLowerCase() !== 'null' && value !== '-' && value !== 'NULL') {
+            rawCompletionDate = value
+          }
+        }
+        
+        if (closingDateColumnName) {
+          const value = String(record[closingDateColumnName as keyof FinanceCsvRow] || '').trim()
+          if (value && value !== '' && value.toLowerCase() !== 'null' && value !== '-' && value !== 'NULL') {
+            rawClosingDate = value
+          }
+        }
+        
+        // Логируем первые несколько записей с заполненными датами для отладки
+        if (i < 5 && (rawCompletionDate || rawClosingDate)) {
+          console.log(`Строка ${i + 2}: completionDate="${rawCompletionDate}", closingDate="${rawClosingDate}"`)
+        }
 
         // Проверяем обязательные поля
         if (!rawBranch) {
@@ -287,6 +388,24 @@ async function main() {
         // Парсим сумму
         const amount = parseDecimal(rawAmount)
 
+        // Парсим новые даты (опционально)
+        let completionDate: Date | null = null
+        let closingDate: Date | null = null
+        
+        if (rawCompletionDate) {
+          completionDate = parseDate(rawCompletionDate)
+          if (!completionDate && i < 5) {
+            console.log(`Предупреждение: не удалось распарсить дату завершения "${rawCompletionDate}" в строке ${i + 2}`)
+          }
+        }
+        
+        if (rawClosingDate) {
+          closingDate = parseDate(rawClosingDate)
+          if (!closingDate && i < 5) {
+            console.log(`Предупреждение: не удалось распарсить дату закрытия "${rawClosingDate}" в строке ${i + 2}`)
+          }
+        }
+
         // Создаем ключ для поиска
         const key = financeKey(rawBranch, rawOrderNumber, clientTIN, date)
         csvFinanceKeys.add(key)
@@ -306,6 +425,8 @@ async function main() {
               amount: amount,
               status: rawStatus,
               comment: rawComment,
+              completionDate: completionDate,
+              closingDate: closingDate,
             },
           })
           updated++
@@ -332,6 +453,8 @@ async function main() {
                 amount: amount,
                 status: rawStatus,
                 comment: rawComment,
+                completionDate: completionDate,
+                closingDate: closingDate,
               },
             })
             updated++
@@ -346,6 +469,8 @@ async function main() {
                 amount: amount,
                 status: rawStatus,
                 comment: rawComment,
+                completionDate: completionDate,
+                closingDate: closingDate,
                 clientTIN: clientTIN,
                 // createdAt и updatedAt будут созданы автоматически
               },

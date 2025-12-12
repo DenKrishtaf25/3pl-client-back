@@ -22,6 +22,8 @@ export class UserFinanceController {
     // Если переданы параметры фильтрации/пагинации - используем новый метод
     if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
         query.dateFrom || query.dateTo || 
+        query.completionDateFrom || query.completionDateTo ||
+        query.closingDateFrom || query.closingDateTo ||
         query.amountFrom !== undefined || query.amountTo !== undefined) {
       return this.financeService.findAllWithPagination(query, userId, userRole)
     }
@@ -69,6 +71,8 @@ export class AdminFinanceController {
     // Если переданы параметры фильтрации/пагинации - используем новый метод
     if (query.search || query.page || query.limit || query.sortBy || query.sortOrder || 
         query.dateFrom || query.dateTo || 
+        query.completionDateFrom || query.completionDateTo ||
+        query.closingDateFrom || query.closingDateTo ||
         query.amountFrom !== undefined || query.amountTo !== undefined) {
       return this.financeService.findAllWithPagination(query, userId, userRole)
     }

@@ -37,7 +37,28 @@ export class FinanceService {
       } else {
         // Если фильтр не указан - показываем все
         return this.prisma.finance.findMany({
-          include: { client: true },
+          select: {
+            id: true,
+            branch: true,
+            counterparty: true,
+            date: true,
+            orderNumber: true,
+            amount: true,
+            status: true,
+            comment: true,
+            completionDate: true,
+            closingDate: true,
+            clientTIN: true,
+            createdAt: true,
+            updatedAt: true,
+            client: {
+              select: {
+                id: true,
+                TIN: true,
+                companyName: true,
+              }
+            }
+          },
           orderBy: { createdAt: 'desc' }
         })
       }
@@ -68,7 +89,28 @@ export class FinanceService {
           in: finalTINs
         }
       },
-      include: { client: true },
+      select: {
+        id: true,
+        branch: true,
+        counterparty: true,
+        date: true,
+        orderNumber: true,
+        amount: true,
+        status: true,
+        comment: true,
+        completionDate: true,
+        closingDate: true,
+        clientTIN: true,
+        createdAt: true,
+        updatedAt: true,
+        client: {
+          select: {
+            id: true,
+            TIN: true,
+            companyName: true,
+          }
+        }
+      },
       orderBy: { createdAt: 'desc' }
     })
   }
@@ -249,6 +291,52 @@ export class FinanceService {
       }
     }
 
+    // Фильтрация по дате завершения
+    if (dto.completionDateFrom || dto.completionDateTo) {
+      const completionDateFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.completionDateFrom) {
+        const fromDate = parseDateTime(dto.completionDateFrom, false)
+        if (fromDate) {
+          completionDateFilter.gte = fromDate
+        }
+      }
+      
+      if (dto.completionDateTo) {
+        const toDate = parseDateTime(dto.completionDateTo, true)
+        if (toDate) {
+          completionDateFilter.lte = toDate
+        }
+      }
+      
+      if (completionDateFilter.gte || completionDateFilter.lte) {
+        where.completionDate = completionDateFilter
+      }
+    }
+
+    // Фильтрация по дате закрытия
+    if (dto.closingDateFrom || dto.closingDateTo) {
+      const closingDateFilter: { gte?: Date; lte?: Date } = {}
+      
+      if (dto.closingDateFrom) {
+        const fromDate = parseDateTime(dto.closingDateFrom, false)
+        if (fromDate) {
+          closingDateFilter.gte = fromDate
+        }
+      }
+      
+      if (dto.closingDateTo) {
+        const toDate = parseDateTime(dto.closingDateTo, true)
+        if (toDate) {
+          closingDateFilter.lte = toDate
+        }
+      }
+      
+      if (closingDateFilter.gte || closingDateFilter.lte) {
+        where.closingDate = closingDateFilter
+      }
+    }
+
     // Фильтрация по сумме
     if (dto.amountFrom !== undefined || dto.amountTo !== undefined) {
       const amountFilter: { gte?: number; lte?: number } = {}
@@ -272,6 +360,10 @@ export class FinanceService {
       orderBy.date = dto.sortOrder || 'desc'
     } else if (dto.sortBy === 'amount') {
       orderBy.amount = dto.sortOrder || 'desc'
+    } else if (dto.sortBy === 'completionDate') {
+      orderBy.completionDate = dto.sortOrder || 'desc'
+    } else if (dto.sortBy === 'closingDate') {
+      orderBy.closingDate = dto.sortOrder || 'desc'
     } else {
       orderBy.orderNumber = dto.sortOrder || 'asc'
     }
@@ -294,6 +386,8 @@ export class FinanceService {
         amount: true,
         status: true,
         comment: true,
+        completionDate: true,
+        closingDate: true,
         clientTIN: true,
         createdAt: true,
         updatedAt: true,
@@ -321,7 +415,28 @@ export class FinanceService {
   async findOne(id: string, userId: string, userRole: string) {
     const finance = await this.prisma.finance.findUnique({
       where: { id },
-      include: { client: true }
+      select: {
+        id: true,
+        branch: true,
+        counterparty: true,
+        date: true,
+        orderNumber: true,
+        amount: true,
+        status: true,
+        comment: true,
+        completionDate: true,
+        closingDate: true,
+        clientTIN: true,
+        createdAt: true,
+        updatedAt: true,
+        client: {
+          select: {
+            id: true,
+            TIN: true,
+            companyName: true,
+          }
+        }
+      }
     })
 
     if (!finance) {
@@ -371,6 +486,8 @@ export class FinanceService {
         amount: dto.amount,
         status: dto.status,
         comment: dto.comment,
+        completionDate: dto.completionDate ? new Date(dto.completionDate) : null,
+        closingDate: dto.closingDate ? new Date(dto.closingDate) : null,
         clientTIN: dto.clientTIN
       },
       include: { client: true }
@@ -423,6 +540,8 @@ export class FinanceService {
         ...(dto.amount !== undefined && { amount: dto.amount }),
         ...(dto.status && { status: dto.status }),
         ...(dto.comment !== undefined && { comment: dto.comment }),
+        ...(dto.completionDate !== undefined && { completionDate: dto.completionDate ? new Date(dto.completionDate) : null }),
+        ...(dto.closingDate !== undefined && { closingDate: dto.closingDate ? new Date(dto.closingDate) : null }),
         ...(dto.clientTIN && { clientTIN: dto.clientTIN })
       },
       include: { client: true }

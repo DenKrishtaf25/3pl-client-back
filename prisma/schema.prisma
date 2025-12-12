@@ -157,19 +157,23 @@ model Finance {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  branch       String
-  counterparty String
-  date         DateTime
-  orderNumber  String   @map("order_number")
-  amount       Decimal  @db.Decimal(15, 2)
-  status       String
-  comment      String?
+  branch         String
+  counterparty   String
+  date           DateTime
+  orderNumber    String   @map("order_number")
+  amount         Decimal  @db.Decimal(15, 2)
+  status         String
+  comment        String?
+  completionDate DateTime? @map("completion_date")
+  closingDate    DateTime? @map("closing_date")
 
   client    Client @relation(fields: [clientTIN], references: [TIN])
   clientTIN String @map("client_tin")
 
   @@index([clientTIN])
   @@index([date])
+  @@index([completionDate])
+  @@index([closingDate])
   @@map("finance")
 }
 

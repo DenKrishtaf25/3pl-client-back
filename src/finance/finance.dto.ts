@@ -24,6 +24,14 @@ export class FinanceDto {
   @IsString()
   comment?: string
 
+  @IsOptional()
+  @IsDateString()
+  completionDate?: string
+
+  @IsOptional()
+  @IsDateString()
+  closingDate?: string
+
   @IsString()
   clientTIN: string
 }
@@ -40,6 +48,14 @@ export class UpdateFinanceDto {
   @IsOptional()
   @IsDateString()
   date?: string
+
+  @IsOptional()
+  @IsDateString()
+  completionDate?: string
+
+  @IsOptional()
+  @IsDateString()
+  closingDate?: string
 
   @IsOptional()
   @IsString()
@@ -97,8 +113,8 @@ export class FindFinanceDto {
   limit?: number
 
   @IsOptional()
-  @IsEnum(['orderNumber', 'date', 'amount'])
-  sortBy?: 'orderNumber' | 'date' | 'amount'
+  @IsEnum(['orderNumber', 'date', 'amount', 'completionDate', 'closingDate'])
+  sortBy?: 'orderNumber' | 'date' | 'amount' | 'completionDate' | 'closingDate'
 
   @IsOptional()
   @IsEnum(['asc', 'desc'])
@@ -116,6 +132,24 @@ export class FindFinanceDto {
   @IsOptional()
   @IsDateString()
   dateTo?: string
+
+  // Фильтры по дате завершения
+  @IsOptional()
+  @IsDateString()
+  completionDateFrom?: string
+
+  @IsOptional()
+  @IsDateString()
+  completionDateTo?: string
+
+  // Фильтры по дате закрытия
+  @IsOptional()
+  @IsDateString()
+  closingDateFrom?: string
+
+  @IsOptional()
+  @IsDateString()
+  closingDateTo?: string
 
   // Фильтры по сумме
   @IsOptional()
