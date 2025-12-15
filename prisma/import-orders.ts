@@ -14,7 +14,7 @@ interface OrderCsvRow {
   'Номер заказа': string
   'Номер заказа КИС': string
   'Дата выгрузки заказа': string
-  'Заявленная дата отгрузки': string
+  'Плановая дата отгрузки': string
   Статус: string
   КоличествоУпаковокПлан: string
   КоличествоУпаковокФакт: string
@@ -31,26 +31,38 @@ function cleanValue(value: string): string {
   return value.trim().replace(/;+$/, '')
 }
 
-function parseDate(dateStr: string): Date | null {
+// Функция для форматирования даты в строку для PostgreSQL (без конвертации часового пояса)
+function formatDateForPostgres(dateStr: string): string | null {
   if (!dateStr || !dateStr.trim()) return null
   const cleaned = dateStr.trim()
   
+  // Формат: YYYY-MM-DD HH:mm:ss или YYYY-MM-DD
   const isoMatch = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/)
   if (isoMatch) {
     const [, year, month, day, hour = '0', minute = '0', second = '0'] = isoMatch
-    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute), parseInt(second))
-    if (!isNaN(date.getTime())) return date
+    // Возвращаем строку в формате PostgreSQL timestamp без time zone
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${second.padStart(2, '0')}`
   }
   
+  // Формат: DD.MM.YYYY HH:mm или DD.MM.YYYY
   const dateMatch = cleaned.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/)
   if (dateMatch) {
     const [, day, month, year, hour = '0', minute = '0'] = dateMatch
-    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute))
-    if (!isNaN(date.getTime())) return date
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:00`
   }
   
-  const parsedDate = new Date(cleaned)
-  return !isNaN(parsedDate.getTime()) ? parsedDate : null
+  return null
+}
+
+function parseDate(dateStr: string): Date | null {
+  // Эта функция больше не используется для сохранения, только для совместимости
+  // Все даты сохраняются через dateStrings в raw SQL
+  const formatted = formatDateForPostgres(dateStr)
+  if (!formatted) return null
+  
+  // Создаем Date объект для совместимости (не используется при сохранении)
+  const date = new Date(formatted.replace(' ', 'T'))
+  return !isNaN(date.getTime()) ? date : null
 }
 
 function parseInteger(value: string): number {
@@ -112,30 +124,167 @@ async function main() {
     const startTime = Date.now()
 
     const BATCH_SIZE = 500
-    const createBatch: Array<any> = []
-    const updateBatch: Array<{ id: string; data: any }> = []
+    const createBatch: Array<{ data: any; dateStrings: { exportDate: string; shipmentDate?: string; acceptanceDate?: string } }> = []
+    const updateBatch: Array<{ id: string; data: any; dateStrings: { exportDate?: string; shipmentDate?: string; acceptanceDate?: string } }> = []
 
     async function processBatches() {
+      // Используем raw SQL для создания записей, чтобы избежать конвертации часового пояса
       if (createBatch.length > 0) {
-        try {
-          const result = await prisma.order.createMany({ data: createBatch, skipDuplicates: true })
-          imported += result.count
-        } catch (error) {
-          console.error('Ошибка при создании записей:', error)
-          errors += createBatch.length
+        const createConcurrency = 50
+        for (let i = 0; i < createBatch.length; i += createConcurrency) {
+          const batch = createBatch.slice(i, i + createConcurrency)
+          await Promise.all(
+            batch.map(async (item) => {
+              try {
+                const params: any[] = []
+                let paramIndex = 1
+                
+                // Добавляем даты как строки
+                params.push(item.dateStrings.exportDate)
+                const exportDateParam = `$${paramIndex}::timestamp`
+                paramIndex++
+                
+                let shipmentDateParam = 'NULL'
+                if (item.dateStrings.shipmentDate) {
+                  params.push(item.dateStrings.shipmentDate)
+                  shipmentDateParam = `$${paramIndex}::timestamp`
+                  paramIndex++
+                }
+                
+                let acceptanceDateParam = 'NULL'
+                if (item.dateStrings.acceptanceDate) {
+                  params.push(item.dateStrings.acceptanceDate)
+                  acceptanceDateParam = `$${paramIndex}::timestamp`
+                  paramIndex++
+                }
+                
+                // Добавляем остальные поля
+                params.push(
+                  item.data.branch,
+                  item.data.orderType,
+                  item.data.orderNumber,
+                  item.data.kisNumber,
+                  item.data.status,
+                  item.data.packagesPlanned,
+                  item.data.packagesActual,
+                  item.data.linesPlanned,
+                  item.data.linesActual,
+                  item.data.counterparty,
+                  item.data.clientTIN
+                )
+                
+                await prisma.$executeRawUnsafe(`
+                  INSERT INTO "order" (
+                    export_date, shipment_date, acceptance_date,
+                    branch, order_type, order_number, kis_number, status,
+                    packages_planned, packages_actual, lines_planned, lines_actual,
+                    counterparty, client_tin
+                  ) VALUES (
+                    ${exportDateParam}, ${shipmentDateParam}, ${acceptanceDateParam},
+                    $${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4},
+                    $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8},
+                    $${paramIndex + 9}, $${paramIndex + 10}
+                  )
+                `, ...params)
+                
+                imported++
+              } catch (error) {
+                errors++
+              }
+            })
+          )
         }
         createBatch.length = 0
       }
 
-      // Используем Promise.all для параллельной обработки обновлений
-      // Но ограничиваем параллелизм для избежания перегрузки БД
+      // Используем raw queries для обновления дат, чтобы избежать конвертации часового пояса
       const updateConcurrency = 50
       for (let i = 0; i < updateBatch.length; i += updateConcurrency) {
         const batch = updateBatch.slice(i, i + updateConcurrency)
         await Promise.all(
           batch.map(async (update) => {
             try {
-              await prisma.order.update({ where: { id: update.id }, data: update.data })
+              // Всегда используем raw query для правильного сохранения дат
+              const dateParts: string[] = []
+              const params: any[] = []
+              let paramIndex = 1
+              
+              // Обрабатываем даты
+              if (update.dateStrings?.exportDate) {
+                dateParts.push(`export_date = $${paramIndex}::timestamp`)
+                params.push(update.dateStrings.exportDate)
+                paramIndex++
+              } else {
+                dateParts.push(`export_date = $${paramIndex}::timestamp`)
+                params.push(update.data.exportDate)
+                paramIndex++
+              }
+              
+              if (update.dateStrings?.shipmentDate !== undefined) {
+                if (update.dateStrings.shipmentDate) {
+                  dateParts.push(`shipment_date = $${paramIndex}::timestamp`)
+                  params.push(update.dateStrings.shipmentDate)
+                  paramIndex++
+                } else {
+                  dateParts.push(`shipment_date = NULL`)
+                }
+              } else if (update.data.shipmentDate) {
+                dateParts.push(`shipment_date = $${paramIndex}::timestamp`)
+                params.push(update.data.shipmentDate)
+                paramIndex++
+              } else {
+                dateParts.push(`shipment_date = NULL`)
+              }
+              
+              if (update.dateStrings?.acceptanceDate !== undefined) {
+                if (update.dateStrings.acceptanceDate) {
+                  dateParts.push(`acceptance_date = $${paramIndex}::timestamp`)
+                  params.push(update.dateStrings.acceptanceDate)
+                  paramIndex++
+                } else {
+                  dateParts.push(`acceptance_date = NULL`)
+                }
+              } else if (update.data.acceptanceDate) {
+                dateParts.push(`acceptance_date = $${paramIndex}::timestamp`)
+                params.push(update.data.acceptanceDate)
+                paramIndex++
+              } else {
+                dateParts.push(`acceptance_date = NULL`)
+              }
+              
+              // Добавляем остальные поля
+              const baseParamIndex = paramIndex
+              params.push(
+                update.data.branch,
+                update.data.orderType,
+                update.data.orderNumber,
+                update.data.kisNumber,
+                update.data.status,
+                update.data.packagesPlanned,
+                update.data.packagesActual,
+                update.data.linesPlanned,
+                update.data.linesActual,
+                update.data.counterparty,
+                update.id
+              )
+              
+              // Обновляем через raw query с правильной нумерацией параметров
+              await prisma.$executeRawUnsafe(`
+                UPDATE "order" 
+                SET ${dateParts.join(', ')},
+                    branch = $${baseParamIndex},
+                    order_type = $${baseParamIndex + 1},
+                    order_number = $${baseParamIndex + 2},
+                    kis_number = $${baseParamIndex + 3},
+                    status = $${baseParamIndex + 4},
+                    packages_planned = $${baseParamIndex + 5},
+                    packages_actual = $${baseParamIndex + 6},
+                    lines_planned = $${baseParamIndex + 7},
+                    lines_actual = $${baseParamIndex + 8},
+                    counterparty = $${baseParamIndex + 9}
+                WHERE id = $${baseParamIndex + 10}
+              `, ...params)
+              
               updated++
             } catch (error) {
               errors++
@@ -192,7 +341,7 @@ async function main() {
           const rawOrderNumber = record['Номер заказа'] ? cleanValue(String(record['Номер заказа'])) : ''
           const rawKisNumber = record['Номер заказа КИС'] ? cleanValue(String(record['Номер заказа КИС'])) : ''
           const rawExportDate = record['Дата выгрузки заказа'] ? String(record['Дата выгрузки заказа']) : ''
-          const rawShipmentDate = record['Заявленная дата отгрузки'] ? String(record['Заявленная дата отгрузки']) : ''
+          const rawShipmentDate = record['Плановая дата отгрузки'] ? String(record['Плановая дата отгрузки']) : ''
           const rawStatus = record.Статус ? cleanValue(String(record.Статус)) : ''
           const rawPackagesPlanned = record.КоличествоУпаковокПлан ? String(record.КоличествоУпаковокПлан) : '0'
           const rawPackagesActual = record.КоличествоУпаковокФакт ? String(record.КоличествоУпаковокФакт) : '0'
@@ -219,9 +368,16 @@ async function main() {
             return callback()
           }
 
+          // Получаем строковые представления дат для прямого сохранения в PostgreSQL
+          const exportDateStr = formatDateForPostgres(rawExportDate) || formatDateForPostgres(new Date().toISOString().split('T')[0] + ' 00:00:00')
+          const shipmentDateStr = formatDateForPostgres(rawShipmentDate)
+          const acceptanceDateStr = formatDateForPostgres(rawAcceptanceDate)
+          
+          // Также создаем Date объекты для совместимости с Prisma
           const exportDate = parseDate(rawExportDate) || new Date()
           const shipmentDate = parseDate(rawShipmentDate)
           const acceptanceDate = parseDate(rawAcceptanceDate)
+          
           const packagesPlanned = parseInteger(rawPackagesPlanned)
           const packagesActual = parseInteger(rawPackagesActual)
           const linesPlanned = parseInteger(rawLinesPlanned)
@@ -249,27 +405,35 @@ async function main() {
                 linesActual,
                 counterparty: rawCounterparty || 'Не указан',
                 acceptanceDate,
+              },
+              dateStrings: {
+                exportDate: exportDateStr || undefined,
+                shipmentDate: shipmentDateStr || undefined,
+                acceptanceDate: acceptanceDateStr || undefined,
               }
             })
             if (updateBatch.length >= BATCH_SIZE) await processBatches()
           } else {
-            // Если запись не найдена в памяти, добавляем в createBatch
-            // createMany с skipDuplicates пропустит дубликаты, если они есть
+            // Если запись не найдена в памяти, добавляем в createBatch с dateStrings
             createBatch.push({
-              branch: rawBranch,
-              orderType: rawOrderType,
-              orderNumber: rawOrderNumber,
-              kisNumber: rawKisNumber || '',
-              exportDate,
-              shipmentDate,
-              status: rawStatus,
-              packagesPlanned,
-              packagesActual,
-              linesPlanned,
-              linesActual,
-              counterparty: rawCounterparty || 'Не указан',
-              acceptanceDate,
-              clientTIN,
+              data: {
+                branch: rawBranch,
+                orderType: rawOrderType,
+                orderNumber: rawOrderNumber,
+                kisNumber: rawKisNumber || '',
+                status: rawStatus,
+                packagesPlanned,
+                packagesActual,
+                linesPlanned,
+                linesActual,
+                counterparty: rawCounterparty || 'Не указан',
+                clientTIN,
+              },
+              dateStrings: {
+                exportDate: exportDateStr!,
+                shipmentDate: shipmentDateStr || undefined,
+                acceptanceDate: acceptanceDateStr || undefined,
+              }
             })
             if (createBatch.length >= BATCH_SIZE) await processBatches()
           }
