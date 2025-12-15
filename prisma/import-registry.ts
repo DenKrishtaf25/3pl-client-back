@@ -157,7 +157,24 @@ async function main() {
     }
 
     const readStream = createReadStream(csvFilePath)
-    const decodeStream = iconv.decodeStream('win1251')
+    let isFirstChunk = true
+    const decodeStream = new Transform({
+      transform(chunk: Buffer, encoding, callback) {
+        try {
+          if (isFirstChunk) {
+            isFirstChunk = false
+            if (chunk[0] === 0xEF && chunk[1] === 0xBB && chunk[2] === 0xBF) {
+              chunk = chunk.slice(3)
+            }
+          }
+          const decoded = chunk.toString('utf-8')
+          this.push(decoded)
+          callback()
+        } catch (error) {
+          callback(error as Error)
+        }
+      }
+    })
     const parser = parse({
       delimiter: ';',
       columns: true,

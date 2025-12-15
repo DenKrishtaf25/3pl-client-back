@@ -74,7 +74,9 @@ async function main() {
     const existingOrdersMap = new Map<string, { id: string }>()
     let skip = 0
     const batchSize = 10000
+    let totalLoaded = 0
     
+    console.log('Загружаем существующие записи orders...')
     while (true) {
       const batch = await prisma.order.findMany({
         select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true },
@@ -88,11 +90,17 @@ async function main() {
         existingOrdersMap.set(key, { id: order.id })
       })
       
+      totalLoaded += batch.length
       skip += batchSize
+      
+      if (totalLoaded % 50000 === 0) {
+        console.log(`Загружено ${totalLoaded} записей в память...`)
+      }
+      
       if (batch.length < batchSize) break
     }
     
-    console.log(`Загружено ${existingOrdersMap.size} существующих записей orders`)
+    console.log(`Загружено ${existingOrdersMap.size} существующих записей orders в память`)
 
     let imported = 0
     let updated = 0
@@ -109,24 +117,54 @@ async function main() {
 
     async function processBatches() {
       if (createBatch.length > 0) {
-        await prisma.order.createMany({ data: createBatch, skipDuplicates: true })
-        imported += createBatch.length
+        try {
+          const result = await prisma.order.createMany({ data: createBatch, skipDuplicates: true })
+          imported += result.count
+        } catch (error) {
+          console.error('Ошибка при создании записей:', error)
+          errors += createBatch.length
+        }
         createBatch.length = 0
       }
 
-      for (const update of updateBatch) {
-        try {
-          await prisma.order.update({ where: { id: update.id }, data: update.data })
-          updated++
-        } catch (error) {
-          errors++
-        }
+      // Используем Promise.all для параллельной обработки обновлений
+      // Но ограничиваем параллелизм для избежания перегрузки БД
+      const updateConcurrency = 50
+      for (let i = 0; i < updateBatch.length; i += updateConcurrency) {
+        const batch = updateBatch.slice(i, i + updateConcurrency)
+        await Promise.all(
+          batch.map(async (update) => {
+            try {
+              await prisma.order.update({ where: { id: update.id }, data: update.data })
+              updated++
+            } catch (error) {
+              errors++
+            }
+          })
+        )
       }
       updateBatch.length = 0
     }
 
     const readStream = createReadStream(csvFilePath)
-    const decodeStream = iconv.decodeStream('win1251')
+    let isFirstChunk = true
+    const decodeStream = new Transform({
+      transform(chunk: Buffer, encoding, callback) {
+        try {
+          if (isFirstChunk) {
+            isFirstChunk = false
+            if (chunk[0] === 0xEF && chunk[1] === 0xBB && chunk[2] === 0xBF) {
+              chunk = chunk.slice(3)
+            }
+          }
+          const decoded = chunk.toString('utf-8')
+          this.push(decoded)
+          callback()
+        } catch (error) {
+          callback(error as Error)
+        }
+      }
+    })
     const parser = parse({
       delimiter: ';',
       columns: true,
@@ -135,12 +173,20 @@ async function main() {
       relax_column_count: true,
     })
 
+    let isFirstDataRecord = true
     const processStream = new Transform({
       objectMode: true,
       async transform(record: OrderCsvRow, encoding, callback) {
         rowNumber++
         
         try {
+          // Отладка первой записи данных
+          if (isFirstDataRecord) {
+            isFirstDataRecord = false
+            console.log('Первая запись данных:', JSON.stringify(record, null, 2))
+            console.log('Ключи записи:', Object.keys(record))
+          }
+          
           const rawBranch = record.Филиал ? cleanValue(String(record.Филиал)) : ''
           const rawOrderType = record['Тип заказа'] ? cleanValue(String(record['Тип заказа'])) : ''
           const rawOrderNumber = record['Номер заказа'] ? cleanValue(String(record['Номер заказа'])) : ''
@@ -157,6 +203,10 @@ async function main() {
           const rawClientTIN = record.ИНН ? cleanValue(String(record.ИНН)) : ''
 
           if (!rawBranch || !rawClientTIN || !rawOrderType || !rawOrderNumber || !rawStatus) {
+            if (rowNumber <= 5) {
+              console.log(`Строка ${rowNumber}: Пропущена. Значения: Филиал="${rawBranch}", ИНН="${rawClientTIN}", Тип="${rawOrderType}", Номер="${rawOrderNumber}", Статус="${rawStatus}"`)
+              console.log(`Строка ${rowNumber}: Ключи record:`, Object.keys(record))
+            }
             skippedRecords.push({ row: rowNumber, reason: 'Отсутствуют обязательные поля' })
             skipped++
             return callback()
@@ -203,49 +253,25 @@ async function main() {
             })
             if (updateBatch.length >= BATCH_SIZE) await processBatches()
           } else {
-            const existingInDb = await prisma.order.findFirst({
-              where: { branch: rawBranch, orderType: rawOrderType, orderNumber: rawOrderNumber, clientTIN }
+            // Если запись не найдена в памяти, добавляем в createBatch
+            // createMany с skipDuplicates пропустит дубликаты, если они есть
+            createBatch.push({
+              branch: rawBranch,
+              orderType: rawOrderType,
+              orderNumber: rawOrderNumber,
+              kisNumber: rawKisNumber || '',
+              exportDate,
+              shipmentDate,
+              status: rawStatus,
+              packagesPlanned,
+              packagesActual,
+              linesPlanned,
+              linesActual,
+              counterparty: rawCounterparty || 'Не указан',
+              acceptanceDate,
+              clientTIN,
             })
-
-            if (existingInDb) {
-              updateBatch.push({
-                id: existingInDb.id,
-                data: {
-                  branch: rawBranch,
-                  orderType: rawOrderType,
-                  orderNumber: rawOrderNumber,
-                  kisNumber: rawKisNumber || '',
-                  exportDate,
-                  shipmentDate,
-                  status: rawStatus,
-                  packagesPlanned,
-                  packagesActual,
-                  linesPlanned,
-                  linesActual,
-                  counterparty: rawCounterparty || 'Не указан',
-                  acceptanceDate,
-                }
-              })
-              if (updateBatch.length >= BATCH_SIZE) await processBatches()
-            } else {
-              createBatch.push({
-                branch: rawBranch,
-                orderType: rawOrderType,
-                orderNumber: rawOrderNumber,
-                kisNumber: rawKisNumber || '',
-                exportDate,
-                shipmentDate,
-                status: rawStatus,
-                packagesPlanned,
-                packagesActual,
-                linesPlanned,
-                linesActual,
-                counterparty: rawCounterparty || 'Не указан',
-                acceptanceDate,
-                clientTIN,
-              })
-              if (createBatch.length >= BATCH_SIZE) await processBatches()
-            }
+            if (createBatch.length >= BATCH_SIZE) await processBatches()
           }
 
           if (rowNumber % 1000 === 0) {

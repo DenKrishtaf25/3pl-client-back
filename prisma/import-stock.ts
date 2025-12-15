@@ -132,25 +132,56 @@ async function main() {
 
     // Создаем поток для обработки CSV с декодированием
     const readStream = createReadStream(csvFilePath)
-    const decodeStream = iconv.decodeStream('win1251')
-    console.log('Используем кодировку Windows-1251 для декодирования')
+    console.log('Используем кодировку UTF-8 для декодирования')
 
-    // Парсер CSV
+    // Создаем Transform stream для декодирования UTF-8
+    let isFirstChunk = true
+    const decodeStream = new Transform({
+      transform(chunk: Buffer, encoding, callback) {
+        try {
+          // Удаляем BOM из первого чанка если он есть
+          if (isFirstChunk) {
+            isFirstChunk = false
+            if (chunk[0] === 0xEF && chunk[1] === 0xBB && chunk[2] === 0xBF) {
+              chunk = chunk.slice(3)
+              console.log('Обнаружен UTF-8 BOM, удаляем...')
+            }
+          }
+          const decoded = chunk.toString('utf-8')
+          this.push(decoded)
+          callback()
+        } catch (error) {
+          callback(error as Error)
+        }
+      }
+    })
+
+    // Парсер CSV - важно: columns должен быть true для использования первой строки как заголовков
     const parser = parse({
       delimiter: ';',
       columns: true,
       skip_empty_lines: true,
       trim: true,
       relax_column_count: true,
+      bom: true, // Автоматически удаляет BOM
     })
 
     // Трансформ для обработки записей
+    let isFirstDataRecord = true
     const processStream = new Transform({
       objectMode: true,
       async transform(record: StockCsvRow, encoding, callback) {
         rowNumber++
         
         try {
+          // Отладка первой записи данных
+          if (isFirstDataRecord) {
+            isFirstDataRecord = false
+            console.log('Первая запись данных:', JSON.stringify(record, null, 2))
+            console.log('Ключи записи:', Object.keys(record))
+            console.log('Тип записи:', typeof record)
+          }
+          
           const rawWarehouse = record.Склад ? cleanValue(String(record.Склад)) : ''
           const rawClientTIN = record.ИНН ? cleanValue(String(record.ИНН)) : ''
           const rawNomenclature = record.Наименование ? cleanValue(String(record.Наименование)) : ''
@@ -159,6 +190,10 @@ async function main() {
 
           // Валидация
           if (!rawWarehouse || !rawClientTIN || !rawNomenclature || !rawArticle) {
+            if (rowNumber <= 5) {
+              console.log(`Строка ${rowNumber}: Пропущена. Значения: Склад="${rawWarehouse}", ИНН="${rawClientTIN}", Наименование="${rawNomenclature}", Артикул="${rawArticle}"`)
+              console.log(`Строка ${rowNumber}: Ключи record:`, Object.keys(record))
+            }
             skippedRecords.push({ 
               row: rowNumber, 
               reason: 'Отсутствуют обязательные поля' 
