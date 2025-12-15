@@ -1,25 +1,27 @@
 import { PrismaClient } from '@prisma/client'
-import { parse } from 'csv-parse/sync'
-import { readFileSync } from 'fs'
+import { parse } from 'csv-parse'
+import { createReadStream } from 'fs'
 import { join } from 'path'
 import * as iconv from 'iconv-lite'
+import { pipeline } from 'stream/promises'
+import { Transform } from 'stream'
 
 const prisma = new PrismaClient()
 
 interface StockCsvRow {
-  Склад: string                    // warehouse
-  Поклажедатель: string            // не используется
-  ИНН: string                      // clientTIN
-  Ячейка: string                   // не используется
-  Наименование: string             // nomenclature
-  Артикул: string                  // article
-  Код: string                      // не используется
-  Колво: string                    // quantity
-  Контейнер: string                // не используется
-  'Дата приемки или отгрузки': string // не используется
-  'Время нахождения в ячейке (в часах)': string // не используется
-  Зона: string                     // не используется
-  ТипЗоны: string                  // не используется
+  Склад: string
+  Поклажедатель: string
+  ИНН: string
+  Ячейка: string
+  Наименование: string
+  Артикул: string
+  Код: string
+  Колво: string
+  Контейнер: string
+  'Дата приемки или отгрузки': string
+  'Время нахождения в ячейке (в часах)': string
+  Зона: string
+  ТипЗоны: string
 }
 
 // Функция для очистки значения
@@ -31,303 +33,270 @@ function cleanValue(value: string): string {
 // Функция для парсинга количества (целое число)
 function parseQuantity(value: string): number {
   if (!value) return 0
-  
-  // Убираем пробелы и запятые
   const cleaned = value.trim().replace(/,/g, '').replace(/\s/g, '')
-  
-  // Парсим число
   const num = parseInt(cleaned, 10)
-  
   return isNaN(num) ? 0 : num
 }
 
+// Функция для создания уникального ключа записи
+const stockKey = (w: string, n: string, a: string, t: string) => `${w}|${n}|${a}|${t}`
+
 async function main() {
   try {
-    // Читаем CSV файл с правильной кодировкой
     const csvFilePath = join(process.cwd(), 'table_data', 'stock.csv')
-    
-    // Пробуем прочитать файл в разных кодировках
-    let fileContent: string
-    const buffer = readFileSync(csvFilePath)
-    
-    // Убираем BOM (Byte Order Mark) если есть (для UTF-8-sig)
-    let bufferWithoutBOM = buffer
-    if (buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
-      bufferWithoutBOM = buffer.slice(3)
-      console.log('Обнаружен UTF-8 BOM, удаляем...')
-    } else if (buffer[0] === 0xFF && buffer[1] === 0xFE) {
-      bufferWithoutBOM = buffer.slice(2)
-      console.log('Обнаружен UTF-16 LE BOM, удаляем...')
-    } else if (buffer[0] === 0xFE && buffer[1] === 0xFF) {
-      bufferWithoutBOM = buffer.slice(2)
-      console.log('Обнаружен UTF-16 BE BOM, удаляем...')
-    }
-    
-    // Пробуем сначала Windows-1251 (обычно для русских CSV файлов из Excel)
-    try {
-      fileContent = iconv.decode(bufferWithoutBOM, 'win1251')
-      if (!fileContent || fileContent.length === 0) {
-        throw new Error('Пустой файл после декодирования')
-      }
-      // Проверяем, что русские символы читаются правильно
-      if (!fileContent.includes('Склад') && !fileContent.includes('ИНН')) {
-        throw new Error('Русские символы не читаются правильно в win1251')
-      }
-      console.log('Файл успешно декодирован как Windows-1251')
-    } catch (error) {
-      // Если не получилось с Windows-1251, пробуем UTF-8
-      try {
-        fileContent = bufferWithoutBOM.toString('utf-8')
-        // Проверяем, что русские символы читаются правильно
-        if (!fileContent.includes('Склад') && !fileContent.includes('ИНН')) {
-          throw new Error('Русские символы не читаются правильно в UTF-8')
-        }
-        console.log('Файл успешно декодирован как UTF-8')
-      } catch (e) {
-        // Если и это не помогло, пробуем latin1 как последний вариант
-        fileContent = bufferWithoutBOM.toString('latin1')
-        console.log('Файл декодирован как latin1 (возможны проблемы с русскими символами)')
-      }
-    }
+    console.log('Начинаем потоковый импорт stock...')
 
-    // Парсим CSV с разделителем точка с запятой
-    const records: StockCsvRow[] = parse(fileContent, {
-      delimiter: ';',
-      columns: true, // Используем первую строку как заголовки
-      skip_empty_lines: true,
-      trim: true,
-      relax_column_count: true, // Разрешаем разное количество колонок
-    })
-
-    console.log(`Найдено ${records.length} записей в CSV файле`)
+    // Загружаем список клиентов для проверки (это небольшой набор данных)
     console.log('Загружаем список клиентов для проверки...')
-
-    // Загружаем все клиенты в память для быстрой проверки
     const allClients = await prisma.client.findMany({
       select: { TIN: true }
     })
     const clientTINsSet = new Set(allClients.map(c => c.TIN))
-    console.log(`Загружено ${clientTINsSet.size} клиентов для проверки\n`)
+    console.log(`Загружено ${clientTINsSet.size} клиентов для проверки`)
 
-    // Загружаем все существующие записи stock для сравнения
+    // Загружаем существующие записи stock порциями для создания Map
+    // Используем только ключевые поля для экономии памяти
     console.log('Загружаем существующие записи stock для сравнения...')
-    const existingStocks = await prisma.stock.findMany({
-      select: {
-        id: true,
-        warehouse: true,
-        nomenclature: true,
-        article: true,
-        quantity: true,
-        clientTIN: true,
-      }
-    })
-    
-    // Функция для создания уникального ключа записи
-    const stockKey = (w: string, n: string, a: string, t: string) => `${w}|${n}|${a}|${t}`
-    
-    // Создаем Map для быстрого поиска по ключу (warehouse + nomenclature + article + clientTIN)
     const existingStocksMap = new Map<string, { id: string; quantity: number }>()
-    existingStocks.forEach(stock => {
-      const key = stockKey(stock.warehouse, stock.nomenclature, stock.article, stock.clientTIN)
-      existingStocksMap.set(key, { id: stock.id, quantity: stock.quantity })
-    })
-    console.log(`Загружено ${existingStocksMap.size} существующих записей stock\n`)
+    
+    let skip = 0
+    const batchSize = 10000
+    while (true) {
+      const batch = await prisma.stock.findMany({
+        select: {
+          id: true,
+          warehouse: true,
+          nomenclature: true,
+          article: true,
+          quantity: true,
+          clientTIN: true,
+        },
+        skip,
+        take: batchSize,
+      })
+      
+      if (batch.length === 0) break
+      
+      batch.forEach(stock => {
+        const key = stockKey(stock.warehouse, stock.nomenclature, stock.article, stock.clientTIN)
+        existingStocksMap.set(key, { id: stock.id, quantity: stock.quantity })
+      })
+      
+      skip += batchSize
+      if (batch.length < batchSize) break
+    }
+    
+    console.log(`Загружено ${existingStocksMap.size} существующих записей stock`)
 
-    // Создаем Set для отслеживания записей из CSV
-    const csvStockKeys = new Set<string>()
-
-    // Импортируем данные в базу
+    // Статистика импорта
     let imported = 0
     let updated = 0
     let skipped = 0
     let errors = 0
+    let rowNumber = 1
     const skippedRecords: Array<{ row: number; reason: string; data?: string }> = []
+    const csvStockKeys = new Set<string>()
     const startTime = Date.now()
 
-    for (let i = 0; i < records.length; i++) {
-      const record = records[i]
-      
-      try {
-        // Извлекаем данные из записи
-        const rawWarehouse = record.Склад ? cleanValue(String(record.Склад)) : ''
-        const rawClientTIN = record.ИНН ? cleanValue(String(record.ИНН)) : ''
-        const rawNomenclature = record.Наименование ? cleanValue(String(record.Наименование)) : ''
-        const rawArticle = record.Артикул ? cleanValue(String(record.Артикул)) : ''
-        const rawQuantity = record.Колво ? String(record.Колво) : '0'
+    // Батчинг для операций с БД
+    const BATCH_SIZE = 500
+    const createBatch: Array<{ warehouse: string; nomenclature: string; article: string; quantity: number; clientTIN: string }> = []
+    const updateBatch: Array<{ id: string; quantity: number }> = []
 
-        // Проверяем обязательные поля
-        if (!rawWarehouse) {
-          const reason = 'Отсутствует склад'
-          if (i < 10 || skippedRecords.length < 10) {
-            console.log(`Строка ${i + 2}: пропущена (${reason})`)
-          }
-          skippedRecords.push({ row: i + 2, reason })
-          skipped++
-          continue
-        }
+    // Функция для обработки батчей
+    async function processBatches() {
+      // Создаем новые записи батчем
+      if (createBatch.length > 0) {
+        await prisma.stock.createMany({
+          data: createBatch,
+          skipDuplicates: true,
+        })
+        imported += createBatch.length
+        createBatch.length = 0
+      }
 
-        if (!rawClientTIN) {
-          const reason = 'Отсутствует ИНН клиента'
-          if (i < 10 || skippedRecords.length < 10) {
-            console.log(`Строка ${i + 2}: пропущена (${reason})`)
-          }
-          skippedRecords.push({ row: i + 2, reason })
-          skipped++
-          continue
-        }
-
-        // Очищаем TIN (убираем все нецифровые символы)
-        const clientTIN = rawClientTIN.replace(/\D/g, '')
-        
-        if (!clientTIN || clientTIN.length === 0) {
-          const reason = `Неверный формат ИНН: "${rawClientTIN}"`
-          if (i < 10 || skippedRecords.length < 10) {
-            console.log(`Строка ${i + 2}: пропущена (${reason})`)
-          }
-          skippedRecords.push({ row: i + 2, reason, data: `${rawClientTIN}; ${rawNomenclature}` })
-          skipped++
-          continue
-        }
-
-        // Проверяем, существует ли клиент с таким TIN (быстрая проверка в памяти)
-        if (!clientTINsSet.has(clientTIN)) {
-          const reason = `Клиент с ИНН ${clientTIN} не найден в базе данных`
-          if (i < 10 || skippedRecords.length < 10) {
-            console.log(`Строка ${i + 2}: пропущена (${reason})`)
-          }
-          skippedRecords.push({ row: i + 2, reason, data: `${clientTIN}; ${rawNomenclature}` })
-          skipped++
-          continue
-        }
-
-        if (!rawNomenclature) {
-          const reason = 'Отсутствует наименование'
-          if (i < 10 || skippedRecords.length < 10) {
-            console.log(`Строка ${i + 2}: пропущена (${reason})`)
-          }
-          skippedRecords.push({ row: i + 2, reason })
-          skipped++
-          continue
-        }
-
-        if (!rawArticle) {
-          const reason = 'Отсутствует артикул'
-          if (i < 10 || skippedRecords.length < 10) {
-            console.log(`Строка ${i + 2}: пропущена (${reason})`)
-          }
-          skippedRecords.push({ row: i + 2, reason })
-          skipped++
-          continue
-        }
-
-        // Парсим количество
-        const quantity = parseQuantity(rawQuantity)
-        
-        if (quantity < 0) {
-          const reason = `Некорректное количество: ${quantity}`
-          if (i < 10 || skippedRecords.length < 10) {
-            console.log(`Строка ${i + 2}: пропущена (${reason})`)
-          }
-          skippedRecords.push({ row: i + 2, reason, data: `${rawArticle}; ${rawNomenclature}` })
-          skipped++
-          continue
-        }
-
-        // Создаем ключ для поиска
-        const key = stockKey(rawWarehouse, rawNomenclature, rawArticle, clientTIN)
-        csvStockKeys.add(key)
-
-        // Проверяем, существует ли запись
-        const existingStock = existingStocksMap.get(key)
-
-        if (existingStock) {
-          // Запись существует - проверяем, изменилось ли количество
-          if (existingStock.quantity !== quantity) {
-            // Обновляем запись
-            await prisma.stock.update({
-              where: { id: existingStock.id },
-              data: { quantity: quantity },
-            })
-            updated++
-          }
-          // Если количество не изменилось, ничего не делаем
-        } else {
-          // Запись не найдена в Map - проверяем в БД на случай дубликатов
-          // (если в базе уже есть дубликаты, Map может содержать не все записи)
-          const existingInDb = await prisma.stock.findFirst({
-            where: {
-              warehouse: rawWarehouse,
-              nomenclature: rawNomenclature,
-              article: rawArticle,
-              clientTIN: clientTIN,
-            }
+      // Обновляем записи по одной (Prisma не поддерживает bulk update)
+      for (const update of updateBatch) {
+        try {
+          await prisma.stock.update({
+            where: { id: update.id },
+            data: { quantity: update.quantity },
           })
+          updated++
+        } catch (error) {
+          errors++
+        }
+      }
+      updateBatch.length = 0
+    }
 
-          if (existingInDb) {
-            // Запись найдена в БД - обновляем ее
-            if (existingInDb.quantity !== quantity) {
-              await prisma.stock.update({
-                where: { id: existingInDb.id },
-                data: { quantity: quantity },
-              })
-              updated++
+    // Создаем поток для обработки CSV с декодированием
+    const readStream = createReadStream(csvFilePath)
+    const decodeStream = iconv.decodeStream('win1251')
+    console.log('Используем кодировку Windows-1251 для декодирования')
+
+    // Парсер CSV
+    const parser = parse({
+      delimiter: ';',
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      relax_column_count: true,
+    })
+
+    // Трансформ для обработки записей
+    const processStream = new Transform({
+      objectMode: true,
+      async transform(record: StockCsvRow, encoding, callback) {
+        rowNumber++
+        
+        try {
+          const rawWarehouse = record.Склад ? cleanValue(String(record.Склад)) : ''
+          const rawClientTIN = record.ИНН ? cleanValue(String(record.ИНН)) : ''
+          const rawNomenclature = record.Наименование ? cleanValue(String(record.Наименование)) : ''
+          const rawArticle = record.Артикул ? cleanValue(String(record.Артикул)) : ''
+          const rawQuantity = record.Колво ? String(record.Колво) : '0'
+
+          // Валидация
+          if (!rawWarehouse || !rawClientTIN || !rawNomenclature || !rawArticle) {
+            skippedRecords.push({ 
+              row: rowNumber, 
+              reason: 'Отсутствуют обязательные поля' 
+            })
+            skipped++
+            return callback()
+          }
+
+          const clientTIN = rawClientTIN.replace(/\D/g, '')
+          if (!clientTIN || !clientTINsSet.has(clientTIN)) {
+            skippedRecords.push({ 
+              row: rowNumber, 
+              reason: `Клиент с ИНН ${clientTIN} не найден` 
+            })
+            skipped++
+            return callback()
+          }
+
+          const quantity = parseQuantity(rawQuantity)
+          if (quantity < 0) {
+            skippedRecords.push({ 
+              row: rowNumber, 
+              reason: `Некорректное количество: ${quantity}` 
+            })
+            skipped++
+            return callback()
+          }
+
+          const key = stockKey(rawWarehouse, rawNomenclature, rawArticle, clientTIN)
+          csvStockKeys.add(key)
+
+          const existingStock = existingStocksMap.get(key)
+          
+          if (existingStock) {
+            if (existingStock.quantity !== quantity) {
+              updateBatch.push({ id: existingStock.id, quantity })
+              if (updateBatch.length >= BATCH_SIZE) {
+                await processBatches()
+              }
             }
-            // Если количество не изменилось, ничего не делаем
           } else {
-            // Записи действительно нет - создаем новую
-            await prisma.stock.create({
-              data: {
+            // Проверяем в БД на случай дубликатов
+            const existingInDb = await prisma.stock.findFirst({
+              where: {
+                warehouse: rawWarehouse,
+                nomenclature: rawNomenclature,
+                article: rawArticle,
+                clientTIN: clientTIN,
+              }
+            })
+
+            if (existingInDb) {
+              if (existingInDb.quantity !== quantity) {
+                updateBatch.push({ id: existingInDb.id, quantity })
+                if (updateBatch.length >= BATCH_SIZE) {
+                  await processBatches()
+                }
+              }
+            } else {
+              createBatch.push({
                 warehouse: rawWarehouse,
                 nomenclature: rawNomenclature,
                 article: rawArticle,
                 quantity: quantity,
                 clientTIN: clientTIN,
-                // createdAt и updatedAt будут созданы автоматически
-              },
-            })
-            imported++
+              })
+              
+              if (createBatch.length >= BATCH_SIZE) {
+                await processBatches()
+              }
+            }
           }
-        }
 
-        // Показываем прогресс каждые 1000 записей
-        if ((i + 1) % 1000 === 0) {
-          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-          const rate = ((i + 1) / (Date.now() - startTime)) * 1000
-          const remaining = Math.round((records.length - i - 1) / rate)
-          console.log(`Обработано ${i + 1}/${records.length} записей (${((i + 1) / records.length * 100).toFixed(1)}%) | Импортировано: ${imported} | Обновлено: ${updated} | Скорость: ${rate.toFixed(0)} зап/сек | Осталось: ~${remaining} сек`)
+          // Прогресс каждые 1000 записей
+          if (rowNumber % 1000 === 0) {
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+            const rate = (rowNumber / (Date.now() - startTime)) * 1000
+            console.log(`Обработано ${rowNumber} записей | Импортировано: ${imported} | Обновлено: ${updated} | Скорость: ${rate.toFixed(0)} зап/сек`)
+          }
+        } catch (error) {
+          errors++
+          skippedRecords.push({ 
+            row: rowNumber, 
+            reason: `Ошибка: ${error instanceof Error ? error.message : String(error)}` 
+          })
         }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        console.error(`Строка ${i + 2}: ошибка при импорте:`, errorMessage)
-        skippedRecords.push({ 
-          row: i + 2, 
-          reason: `Ошибка: ${errorMessage}`, 
-          data: record ? JSON.stringify(record).substring(0, 100) : 'нет данных'
-        })
-        errors++
-      }
-    }
+        
+        callback()
+      },
+    })
+
+    // Запускаем потоковую обработку
+    await pipeline(
+      readStream,
+      decodeStream,
+      parser,
+      processStream
+    )
+
+    // Обрабатываем оставшиеся батчи
+    await processBatches()
 
     // Удаляем записи, которых нет в CSV
     console.log('\nУдаляем записи, отсутствующие в CSV...')
     let deleted = 0
+    const deleteBatch: string[] = []
+    
     for (const [key, stock] of existingStocksMap.entries()) {
       if (!csvStockKeys.has(key)) {
-        await prisma.stock.delete({
-          where: { id: stock.id },
-        })
-        deleted++
+        deleteBatch.push(stock.id)
+        if (deleteBatch.length >= BATCH_SIZE) {
+          await prisma.stock.deleteMany({
+            where: { id: { in: deleteBatch } }
+          })
+          deleted += deleteBatch.length
+          deleteBatch.length = 0
+        }
       }
     }
-    console.log(`Удалено ${deleted} записей, отсутствующих в CSV\n`)
+    
+    if (deleteBatch.length > 0) {
+      await prisma.stock.deleteMany({
+        where: { id: { in: deleteBatch } }
+      })
+      deleted += deleteBatch.length
+    }
+    
+    console.log(`Удалено ${deleted} записей, отсутствующих в CSV`)
 
+    const totalDuration = ((Date.now() - startTime) / 1000).toFixed(1)
     console.log('\n=== Результаты импорта ===')
     console.log(`Создано новых: ${imported}`)
     console.log(`Обновлено: ${updated}`)
     console.log(`Удалено: ${deleted}`)
     console.log(`Пропущено: ${skipped}`)
     console.log(`Ошибок: ${errors}`)
-    
+    console.log(`Время выполнения: ${totalDuration} сек`)
+
     // Сохраняем метаданные импорта
     const importTime = new Date()
     await prisma.importMetadata.upsert({
@@ -350,18 +319,12 @@ async function main() {
         errors: errors,
       },
     })
-    console.log(`\nМетаданные импорта сохранены: ${importTime.toISOString()}`)
-    
+
     // Детальный отчет о пропущенных записях (первые 50)
     if (skippedRecords.length > 0) {
       console.log('\n=== Детализация пропущенных записей (первые 50) ===')
-      const recordsToShow = skippedRecords.slice(0, 50)
-      recordsToShow.forEach(({ row, reason, data }) => {
-        console.log(`\nСтрока ${row}:`)
-        console.log(`  Причина: ${reason}`)
-        if (data) {
-          console.log(`  Данные: ${data.substring(0, 100)}${data.length > 100 ? '...' : ''}`)
-        }
+      skippedRecords.slice(0, 50).forEach(({ row, reason }) => {
+        console.log(`Строка ${row}: ${reason}`)
       })
       if (skippedRecords.length > 50) {
         console.log(`\n... и еще ${skippedRecords.length - 50} пропущенных записей`)
@@ -380,4 +343,3 @@ main()
     await prisma.$disconnect()
     process.exit(1)
   })
-

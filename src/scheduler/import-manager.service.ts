@@ -95,7 +95,7 @@ export class ImportManagerService implements OnModuleInit {
       clearTimeout(this.timeoutId)
     }
 
-    // Планируем следующий цикл импортов через 10 минут
+    // Планируем следующий цикл импортов через 30 минут
     this.timeoutId = setTimeout(() => {
       this.runInitialImportsSequence()
     }, this.IMPORT_INTERVAL_MS)
