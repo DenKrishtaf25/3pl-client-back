@@ -37,6 +37,15 @@ export class UserComplaintsController {
     return this.complaintsService.getLastImportInfo()
   }
 
+  @Get('stats/status')
+  @Auth()
+  async getStatusStats(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: string
+  ) {
+    return this.complaintsService.getStatusStats(userId, userRole)
+  }
+
   @Get(':id')
   @Auth()
   async findOne(@Param('id') id: string, @CurrentUser('id') userId: string, @CurrentUser('role') userRole: string) {

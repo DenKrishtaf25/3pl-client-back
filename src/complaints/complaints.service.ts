@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
-import { ComplaintDto, UpdateComplaintDto, FindComplaintDto } from './complaints.dto'
+import { ComplaintDto, UpdateComplaintDto, FindComplaintDto, ComplaintStatusStatsDto } from './complaints.dto'
 import { Prisma } from '@prisma/client'
 
 @Injectable()
@@ -591,6 +591,73 @@ export class ComplaintsService {
       recordsSkipped: metadata.recordsSkipped,
       errors: metadata.errors,
     }
+  }
+
+  async getStatusStats(userId: string, userRole: string) {
+    // Получаем список клиентов пользователя
+    const userClientTINs = await this.getUserClientTINs(userId)
+
+    // Определяем финальный список TIN для фильтрации
+    let allowedTINs: string[] = []
+
+    if (userRole === 'ADMIN') {
+      // Админ может видеть все Complaints
+      allowedTINs = [] // Пустой массив = все клиенты
+    } else {
+      // Обычный пользователь
+      if (userClientTINs.length === 0) {
+        return []
+      }
+      allowedTINs = userClientTINs
+    }
+
+    // Формируем условие для фильтрации по клиентам
+    const where: Prisma.ComplaintWhereInput = {}
+    if (allowedTINs.length > 0) {
+      where.clientTIN = { in: allowedTINs }
+    }
+
+    // Получаем все записи Complaints с нужными полями
+    const complaints = await this.prisma.complaint.findMany({
+      where,
+      select: {
+        status: true,
+        confirmation: true,
+      }
+    })
+
+    // Группируем по статусам
+    const statusMap = new Map<string, { count: number; confirmedCount: number; unconfirmedCount: number }>()
+
+    complaints.forEach(complaint => {
+      const status = complaint.status || 'Без статуса'
+      const confirmation = complaint.confirmation ?? false
+
+      if (statusMap.has(status)) {
+        const existing = statusMap.get(status)!
+        statusMap.set(status, {
+          count: existing.count + 1,
+          confirmedCount: existing.confirmedCount + (confirmation ? 1 : 0),
+          unconfirmedCount: existing.unconfirmedCount + (confirmation ? 0 : 1),
+        })
+      } else {
+        statusMap.set(status, {
+          count: 1,
+          confirmedCount: confirmation ? 1 : 0,
+          unconfirmedCount: confirmation ? 0 : 1,
+        })
+      }
+    })
+
+    // Преобразуем в массив (без сортировки)
+    const stats = Array.from(statusMap.entries()).map(([status, data]) => ({
+      status,
+      count: data.count,
+      confirmedCount: data.confirmedCount,
+      unconfirmedCount: data.unconfirmedCount,
+    }))
+
+    return stats
   }
 }
 

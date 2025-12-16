@@ -160,3 +160,7 @@ export class FindComplaintDto {
   completionDateTo?: string
 }
 
+export class ComplaintStatusStatsDto {
+  // Пустой DTO - сортировка и фильтры не нужны
+}
+
