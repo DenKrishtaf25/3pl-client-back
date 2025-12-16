@@ -7,6 +7,7 @@ import { StockModule } from './stock/stock.module'
 import { RegistryModule } from './registry/registry.module'
 import { OrderModule } from './order/order.module'
 import { AnalyticsModule } from './analytics/analytics.module'
+import { AnalyticOrderModule } from './analytic-order/analytic-order.module'
 import { FinanceModule } from './finance/finance.module'
 import { ComplaintsModule } from './complaints/complaints.module'
 import { SchedulerModule } from './scheduler/scheduler.module'
@@ -21,6 +22,7 @@ import { SchedulerModule } from './scheduler/scheduler.module'
     RegistryModule,
     OrderModule,
     AnalyticsModule,
+    AnalyticOrderModule,
     FinanceModule,
     ComplaintsModule,
     SchedulerModule,

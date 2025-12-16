@@ -37,12 +37,13 @@ model Client {
   TIN         String @unique
   companyName String
 
-  stocks     Stock[]
-  registries Registry[]
-  orders     Order[]
-  analytics  Analytics[]
-  finances   Finance[]
-  complaints Complaint[]
+  stocks         Stock[]
+  registries     Registry[]
+  orders         Order[]
+  analytics      Analytics[]
+  analyticOrders AnalyticOrder[]
+  finances       Finance[]
+  complaints     Complaint[]
 
   users User[] @relation("UserClients")
 
@@ -152,6 +153,25 @@ model Analytics {
   @@map("analytics")
 }
 
+model AnalyticOrder {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branch                String
+  date                  DateTime
+  quantityByPlannedDate Int      @map("quantity_by_planned_date")
+  quantityByActualDate  Int      @map("quantity_by_actual_date")
+
+  client    Client @relation(fields: [clientTIN], references: [TIN])
+  clientTIN String @map("client_tin")
+
+  @@unique([branch, clientTIN, date])
+  @@index([clientTIN])
+  @@index([date])
+  @@map("analytic_order")
+}
+
 model Finance {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now()) @map("created_at")
@@ -207,7 +227,7 @@ model ImportMetadata {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  importType      String   @unique // 'stock', 'registry', 'orders', 'clients', 'analytics', 'finance', 'complaints'
+  importType      String   @unique // 'stock', 'registry', 'orders', 'clients', 'analytics', 'analytic_orders', 'finance', 'complaints'
   lastImportAt    DateTime @map("last_import_at")
   recordsImported Int      @map("records_imported")
   recordsUpdated  Int      @map("records_updated")

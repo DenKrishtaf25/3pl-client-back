@@ -28,6 +28,8 @@
         "import:orders:prod": "node dist/prisma/import-orders.js",
         "import:analytics": "ts-node prisma/import-analytics.ts",
         "import:analytics:prod": "node dist/prisma/import-analytics.js",
+        "import:analytic-orders": "ts-node prisma/import-analytic-orders.ts",
+        "import:analytic-orders:prod": "node dist/prisma/import-analytic-orders.js",
         "import:finance": "ts-node prisma/import-finance.ts",
         "import:finance:prod": "node dist/prisma/import-finance.js",
         "import:complaints": "ts-node prisma/import-complaints.ts",

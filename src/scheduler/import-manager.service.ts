@@ -3,6 +3,7 @@ import { StockImportService } from './stock-import.service'
 import { RegistryImportService } from './registry-import.service'
 import { OrderImportService } from './order-import.service'
 import { AnalyticsImportService } from './analytics-import.service'
+import { AnalyticOrderImportService } from './analytic-order-import.service'
 import { FinanceImportService } from './finance-import.service'
 import { ComplaintsImportService } from './complaints-import.service'
 
@@ -18,6 +19,7 @@ export class ImportManagerService implements OnModuleInit {
     private readonly registryImportService: RegistryImportService,
     private readonly orderImportService: OrderImportService,
     private readonly analyticsImportService: AnalyticsImportService,
+    private readonly analyticOrderImportService: AnalyticOrderImportService,
     private readonly financeImportService: FinanceImportService,
     private readonly complaintsImportService: ComplaintsImportService,
   ) {}
@@ -50,6 +52,7 @@ export class ImportManagerService implements OnModuleInit {
       await this.runImport('complaints', () => this.complaintsImportService.handleComplaintsImport())
       await this.runImport('finance', () => this.financeImportService.handleFinanceImport())
       await this.runImport('analytics', () => this.analyticsImportService.handleAnalyticsImport())
+      await this.runImport('analytic_orders', () => this.analyticOrderImportService.handleAnalyticOrderImport())
       await this.runImport('orders', () => this.orderImportService.handleOrderImport())
       await this.runImport('registry', () => this.registryImportService.handleRegistryImport())
       await this.runImport('stock', () => this.stockImportService.handleStockImport())
