@@ -106,6 +106,16 @@ function findColumn(columnNames: string[], variants: string[]): string | null {
 
 async function main() {
   try {
+    // Проверяем, нужно ли фильтровать по последним 3 месяцам
+    const filterLast3Months = process.env.IMPORT_LAST_3_MONTHS === 'true'
+    const dateThreshold = filterLast3Months ? new Date() : null
+    if (dateThreshold) {
+      dateThreshold.setMonth(dateThreshold.getMonth() - 3)
+      console.log(`Режим фильтрации: импорт только данных за последние 3 месяца (с ${dateThreshold.toLocaleDateString()})`)
+    } else {
+      console.log('Режим: полный импорт всех данных')
+    }
+
     const csvFilePath = join(process.cwd(), 'table_data', 'finance.csv')
     console.log('Начинаем потоковый импорт finance...')
 
@@ -118,7 +128,17 @@ async function main() {
     const batchSize = 10000
     
     while (true) {
+      const whereClause: any = {}
+      if (filterLast3Months && dateThreshold) {
+        whereClause.OR = [
+          { date: { gte: dateThreshold } },
+          { completionDate: { gte: dateThreshold } },
+          { closingDate: { gte: dateThreshold } },
+        ]
+      }
+
       const batch = await prisma.finance.findMany({
+        where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
         select: { id: true, branch: true, orderNumber: true, clientTIN: true, date: true },
         skip,
         take: batchSize,
@@ -290,6 +310,19 @@ async function main() {
             closingDate = parseDate(rawClosingDate)
           }
 
+          // Фильтрация по датам: пропускаем записи старше 3 месяцев
+          if (filterLast3Months && dateThreshold) {
+            const hasRecentDate = 
+              (date && date >= dateThreshold) ||
+              (completionDate && completionDate >= dateThreshold) ||
+              (closingDate && closingDate >= dateThreshold)
+            
+            if (!hasRecentDate) {
+              skipped++
+              return callback()
+            }
+          }
+
           const key = financeKey(rawBranch, rawOrderNumber, clientTIN, date)
           csvFinanceKeys.add(key)
 
@@ -365,7 +398,13 @@ async function main() {
     await pipeline(readStream, decodeStream, parser, processStream)
     await processBatches()
 
-    console.log('\nУдаляем записи, отсутствующие в CSV...')
+    // Удаляем записи, отсутствующие в CSV
+    // При фильтрации удаляем только записи из диапазона последних 3 месяцев
+    if (filterLast3Months && dateThreshold) {
+      console.log('\nРежим фильтрации: удаление только записей за последние 3 месяца, отсутствующих в CSV...')
+    } else {
+      console.log('\nУдаляем записи, отсутствующие в CSV...')
+    }
     let deleted = 0
     const deleteBatch: string[] = []
     

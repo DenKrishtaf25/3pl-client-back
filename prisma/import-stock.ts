@@ -41,8 +41,44 @@ function parseQuantity(value: string): number {
 // Функция для создания уникального ключа записи
 const stockKey = (w: string, n: string, a: string, t: string) => `${w}|${n}|${a}|${t}`
 
+// Функция для парсинга даты из CSV stock (поддерживает DD.MM.YYYY и YYYY-MM-DD)
+function parseStockDate(dateStr: string): Date | null {
+  if (!dateStr || !dateStr.trim()) return null
+  
+  const cleaned = dateStr.trim()
+  
+  // Формат ISO: YYYY-MM-DD
+  const isoMatch = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/)
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+    if (!isNaN(date.getTime())) return date
+  }
+  
+  // Формат: DD.MM.YYYY
+  const dateMatch = cleaned.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/)
+  if (dateMatch) {
+    const [, day, month, year] = dateMatch
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+    if (!isNaN(date.getTime())) return date
+  }
+  
+  const parsedDate = new Date(cleaned)
+  return !isNaN(parsedDate.getTime()) ? parsedDate : null
+}
+
 async function main() {
   try {
+    // Проверяем, нужно ли фильтровать по последним 3 месяцам
+    const filterLast3Months = process.env.IMPORT_LAST_3_MONTHS === 'true'
+    const dateThreshold = filterLast3Months ? new Date() : null
+    if (dateThreshold) {
+      dateThreshold.setMonth(dateThreshold.getMonth() - 3)
+      console.log(`Режим фильтрации: импорт только данных за последние 3 месяца (с ${dateThreshold.toLocaleDateString()})`)
+    } else {
+      console.log('Режим: полный импорт всех данных')
+    }
+
     const csvFilePath = join(process.cwd(), 'table_data', 'stock.csv')
     console.log('Начинаем потоковый импорт stock...')
 
@@ -222,6 +258,19 @@ async function main() {
             return callback()
           }
 
+          // Фильтрация по датам: пропускаем записи старше 3 месяцев
+          // Для stock используем дату из CSV 'Дата приемки или отгрузки'
+          if (filterLast3Months && dateThreshold) {
+            const rawStockDate = record['Дата приемки или отгрузки'] ? String(record['Дата приемки или отгрузки']) : ''
+            const stockDate = parseStockDate(rawStockDate)
+            
+            // Если дата не указана или старше 3 месяцев, пропускаем
+            if (!stockDate || stockDate < dateThreshold) {
+              skipped++
+              return callback()
+            }
+          }
+
           const key = stockKey(rawWarehouse, rawNomenclature, rawArticle, clientTIN)
           csvStockKeys.add(key)
 
@@ -297,7 +346,12 @@ async function main() {
     await processBatches()
 
     // Удаляем записи, которых нет в CSV
-    console.log('\nУдаляем записи, отсутствующие в CSV...')
+    // При фильтрации удаляем только записи из диапазона последних 3 месяцев
+    if (filterLast3Months && dateThreshold) {
+      console.log('\nРежим фильтрации: удаление только записей за последние 3 месяца, отсутствующих в CSV...')
+    } else {
+      console.log('\nУдаляем записи, отсутствующие в CSV...')
+    }
     let deleted = 0
     const deleteBatch: string[] = []
     

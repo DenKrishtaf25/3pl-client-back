@@ -76,6 +76,16 @@ const orderKey = (b: string, ot: string, on: string, t: string) => `${b}|${ot}|$
 
 async function main() {
   try {
+    // Проверяем, нужно ли фильтровать по последним 3 месяцам
+    const filterLast3Months = process.env.IMPORT_LAST_3_MONTHS === 'true'
+    const dateThreshold = filterLast3Months ? new Date() : null
+    if (dateThreshold) {
+      dateThreshold.setMonth(dateThreshold.getMonth() - 3)
+      console.log(`Режим фильтрации: импорт только данных за последние 3 месяца (с ${dateThreshold.toLocaleDateString()})`)
+    } else {
+      console.log('Режим: полный импорт всех данных')
+    }
+
     const csvFilePath = join(process.cwd(), 'table_data', 'orders.csv')
     console.log('Начинаем потоковый импорт orders...')
 
@@ -90,7 +100,17 @@ async function main() {
     
     console.log('Загружаем существующие записи orders...')
     while (true) {
+      const whereClause: any = {}
+      if (filterLast3Months && dateThreshold) {
+        whereClause.OR = [
+          { exportDate: { gte: dateThreshold } },
+          { shipmentDate: { gte: dateThreshold } },
+          { acceptanceDate: { gte: dateThreshold } },
+        ]
+      }
+
       const batch = await prisma.order.findMany({
+        where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
         select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true },
         skip,
         take: batchSize,
@@ -378,6 +398,19 @@ async function main() {
           const shipmentDate = parseDate(rawShipmentDate)
           const acceptanceDate = parseDate(rawAcceptanceDate)
           
+          // Фильтрация по датам: пропускаем записи старше 3 месяцев
+          if (filterLast3Months && dateThreshold) {
+            const hasRecentDate = 
+              (exportDate && exportDate >= dateThreshold) ||
+              (shipmentDate && shipmentDate >= dateThreshold) ||
+              (acceptanceDate && acceptanceDate >= dateThreshold)
+            
+            if (!hasRecentDate) {
+              skipped++
+              return callback()
+            }
+          }
+          
           const packagesPlanned = parseInteger(rawPackagesPlanned)
           const packagesActual = parseInteger(rawPackagesActual)
           const linesPlanned = parseInteger(rawLinesPlanned)
@@ -454,7 +487,13 @@ async function main() {
     await pipeline(readStream, decodeStream, parser, processStream)
     await processBatches()
 
-    console.log('\nУдаляем записи, отсутствующие в CSV...')
+    // Удаляем записи, отсутствующие в CSV
+    // При фильтрации удаляем только записи из диапазона последних 3 месяцев
+    if (filterLast3Months && dateThreshold) {
+      console.log('\nРежим фильтрации: удаление только записей за последние 3 месяца, отсутствующих в CSV...')
+    } else {
+      console.log('\nУдаляем записи, отсутствующие в CSV...')
+    }
     let deleted = 0
     const deleteBatch: string[] = []
     

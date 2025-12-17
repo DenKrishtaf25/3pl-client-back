@@ -30,6 +30,7 @@ export class ComplaintsImportService {
       const { stdout, stderr } = await execAsync(command, {
         cwd: process.cwd(),
         maxBuffer: 10 * 1024 * 1024, // 10MB
+        env: { ...process.env, IMPORT_LAST_3_MONTHS: 'true' },
       })
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(1)

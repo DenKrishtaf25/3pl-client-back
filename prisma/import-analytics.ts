@@ -57,6 +57,16 @@ const analyticsKey = (b: string, t: string, d: Date) => `${b}|${t}|${d.toISOStri
 
 async function main() {
   try {
+    // Проверяем, нужно ли фильтровать по последним 3 месяцам
+    const filterLast3Months = process.env.IMPORT_LAST_3_MONTHS === 'true'
+    const dateThreshold = filterLast3Months ? new Date() : null
+    if (dateThreshold) {
+      dateThreshold.setMonth(dateThreshold.getMonth() - 3)
+      console.log(`Режим фильтрации: импорт только данных за последние 3 месяца (с ${dateThreshold.toLocaleDateString()})`)
+    } else {
+      console.log('Режим: полный импорт всех данных')
+    }
+
     const csvFilePath = join(process.cwd(), 'table_data', 'analytics.csv')
     console.log('Начинаем потоковый импорт analytics...')
 
@@ -69,7 +79,13 @@ async function main() {
     const batchSize = 10000
     
     while (true) {
+      const whereClause: any = {}
+      if (filterLast3Months && dateThreshold) {
+        whereClause.date = { gte: dateThreshold }
+      }
+
       const batch = await prisma.analytics.findMany({
+        where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
         select: { id: true, branch: true, clientTIN: true, date: true },
         skip,
         take: batchSize,
@@ -179,6 +195,12 @@ async function main() {
             return callback()
           }
 
+          // Фильтрация по датам: пропускаем записи старше 3 месяцев
+          if (filterLast3Months && dateThreshold && date < dateThreshold) {
+            skipped++
+            return callback()
+          }
+
           const quantityByRequest = parseInteger(rawQuantityByRequest)
           const quantityByPlan = parseInteger(rawQuantityByPlan)
           const quantityByFact = parseInteger(rawQuantityByFact)
@@ -246,7 +268,13 @@ async function main() {
     await pipeline(readStream, decodeStream, parser, processStream)
     await processBatches()
 
-    console.log('\nУдаляем записи, отсутствующие в CSV...')
+    // Удаляем записи, отсутствующие в CSV
+    // При фильтрации удаляем только записи из диапазона последних 3 месяцев
+    if (filterLast3Months && dateThreshold) {
+      console.log('\nРежим фильтрации: удаление только записей за последние 3 месяца, отсутствующих в CSV...')
+    } else {
+      console.log('\nУдаляем записи, отсутствующие в CSV...')
+    }
     let deleted = 0
     const deleteBatch: string[] = []
     
