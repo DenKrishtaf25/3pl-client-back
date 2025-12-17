@@ -95,7 +95,7 @@ async function main() {
 
     const existingOrdersMap = new Map<string, { id: string }>()
     let skip = 0
-    const batchSize = 10000
+    const batchSize = 2000 // Уменьшено с 10000 для экономии памяти
     let totalLoaded = 0
     
     console.log('Загружаем существующие записи orders...')
@@ -125,11 +125,14 @@ async function main() {
       totalLoaded += batch.length
       skip += batchSize
       
-      if (totalLoaded % 50000 === 0) {
+      if (totalLoaded % 10000 === 0) { // Уменьшено с 50000
         console.log(`Загружено ${totalLoaded} записей в память...`)
       }
       
       if (batch.length < batchSize) break
+      
+      // Задержка для освобождения памяти между батчами
+      await new Promise(resolve => setImmediate(resolve))
     }
     
     console.log(`Загружено ${existingOrdersMap.size} существующих записей orders в память`)
@@ -143,7 +146,7 @@ async function main() {
     const csvOrderKeys = new Set<string>()
     const startTime = Date.now()
 
-    const BATCH_SIZE = 500
+    const BATCH_SIZE = 100 // Уменьшено с 500 для экономии памяти
     const createBatch: Array<{ data: any; dateStrings: { exportDate: string; shipmentDate?: string; acceptanceDate?: string } }> = []
     const updateBatch: Array<{ id: string; data: any; dateStrings: { exportDate?: string; shipmentDate?: string; acceptanceDate?: string } }> = []
 

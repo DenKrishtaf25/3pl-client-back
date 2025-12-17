@@ -82,10 +82,16 @@ export class ImportManagerService implements OnModuleInit {
       await importFn()
       const duration = ((Date.now() - startTime) / 1000).toFixed(1)
       this.logger.log(`[${name}] Импорт завершен за ${duration} сек`)
+      
+      // Задержка между импортами для освобождения памяти
+      // Даем Node.js время на сборку мусора
+      await new Promise(resolve => setTimeout(resolve, 2000)) // 2 секунды задержка
     } catch (error) {
       const duration = ((Date.now() - startTime) / 1000).toFixed(1)
       this.logger.error(`[${name}] Ошибка при импорте за ${duration} сек:`, error)
       // Продолжаем выполнение следующих импортов даже при ошибке
+      // Небольшая задержка даже после ошибки
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
   }
 

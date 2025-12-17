@@ -96,7 +96,7 @@ async function main() {
     const existingStocksMap = new Map<string, { id: string; quantity: number }>()
     
     let skip = 0
-    const batchSize = 10000
+    const batchSize = 2000 // Уменьшено с 10000 для экономии памяти
     while (true) {
       const batch = await prisma.stock.findMany({
         select: {
@@ -120,6 +120,9 @@ async function main() {
       
       skip += batchSize
       if (batch.length < batchSize) break
+      
+      // Задержка для освобождения памяти между батчами
+      await new Promise(resolve => setImmediate(resolve))
     }
     
     console.log(`Загружено ${existingStocksMap.size} существующих записей stock`)
@@ -134,8 +137,8 @@ async function main() {
     const csvStockKeys = new Set<string>()
     const startTime = Date.now()
 
-    // Батчинг для операций с БД
-    const BATCH_SIZE = 500
+    // Батчинг для операций с БД (уменьшено для экономии памяти)
+    const BATCH_SIZE = 100
     const createBatch: Array<{ warehouse: string; nomenclature: string; article: string; quantity: number; clientTIN: string }> = []
     const updateBatch: Array<{ id: string; quantity: number }> = []
 

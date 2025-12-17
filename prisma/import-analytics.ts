@@ -76,7 +76,7 @@ async function main() {
 
     const existingAnalyticsMap = new Map<string, { id: string }>()
     let skip = 0
-    const batchSize = 10000
+    const batchSize = 2000 // Уменьшено с 10000 для экономии памяти
     
     while (true) {
       const whereClause: any = {}
@@ -99,6 +99,9 @@ async function main() {
       
       skip += batchSize
       if (batch.length < batchSize) break
+      
+      // Задержка для освобождения памяти между батчами
+      await new Promise(resolve => setImmediate(resolve))
     }
     
     console.log(`Загружено ${existingAnalyticsMap.size} существующих записей analytics`)
@@ -112,7 +115,7 @@ async function main() {
     const csvAnalyticsKeys = new Set<string>()
     const startTime = Date.now()
 
-    const BATCH_SIZE = 500
+    const BATCH_SIZE = 100 // Уменьшено с 500 для экономии памяти
     const createBatch: Array<any> = []
     const updateBatch: Array<{ id: string; data: any }> = []
 
