@@ -349,36 +349,40 @@ async function main() {
     await processBatches()
 
     // Удаляем записи, которых нет в CSV
-    // При фильтрации удаляем только записи из диапазона последних 3 месяцев
+    // ВАЖНО: При фильтрации по последним 3 месяцам НЕ удаляем записи,
+    // так как это режим частичного обновления, а не полной синхронизации.
+    // Удаление может привести к потере данных, если CSV пустой или содержит только старые данные.
+    let deleted = 0
+    
     if (filterLast3Months && dateThreshold) {
-      console.log('\nРежим фильтрации: удаление только записей за последние 3 месяца, отсутствующих в CSV...')
+      console.log('\nРежим фильтрации: пропускаем удаление записей (режим частичного обновления)')
+      console.log('Удаление записей отключено для предотвращения потери данных при частичном импорте')
     } else {
       console.log('\nУдаляем записи, отсутствующие в CSV...')
-    }
-    let deleted = 0
-    const deleteBatch: string[] = []
-    
-    for (const [key, stock] of existingStocksMap.entries()) {
-      if (!csvStockKeys.has(key)) {
-        deleteBatch.push(stock.id)
-        if (deleteBatch.length >= BATCH_SIZE) {
-          await prisma.stock.deleteMany({
-            where: { id: { in: deleteBatch } }
-          })
-          deleted += deleteBatch.length
-          deleteBatch.length = 0
+      const deleteBatch: string[] = []
+      
+      for (const [key, stock] of existingStocksMap.entries()) {
+        if (!csvStockKeys.has(key)) {
+          deleteBatch.push(stock.id)
+          if (deleteBatch.length >= BATCH_SIZE) {
+            await prisma.stock.deleteMany({
+              where: { id: { in: deleteBatch } }
+            })
+            deleted += deleteBatch.length
+            deleteBatch.length = 0
+          }
         }
       }
+      
+      if (deleteBatch.length > 0) {
+        await prisma.stock.deleteMany({
+          where: { id: { in: deleteBatch } }
+        })
+        deleted += deleteBatch.length
+      }
+      
+      console.log(`Удалено ${deleted} записей, отсутствующих в CSV`)
     }
-    
-    if (deleteBatch.length > 0) {
-      await prisma.stock.deleteMany({
-        where: { id: { in: deleteBatch } }
-      })
-      deleted += deleteBatch.length
-    }
-    
-    console.log(`Удалено ${deleted} записей, отсутствующих в CSV`)
 
     const totalDuration = ((Date.now() - startTime) / 1000).toFixed(1)
     console.log('\n=== Результаты импорта ===')
