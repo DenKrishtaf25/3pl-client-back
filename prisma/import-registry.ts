@@ -112,22 +112,31 @@ async function main() {
     const clientTINsSet = new Set(allClients.map(c => c.TIN))
     console.log(`Загружено ${clientTINsSet.size} клиентов`)
 
+    // Оптимизация: загружаем только записи за последние 3 месяца в память
+    // Для более старых записей будем делать запросы к БД по мере необходимости
     const existingRegistriesMap = new Map<string, { id: string }>()
     let skip = 0
     const batchSize = 2000 // Уменьшено с 10000 для экономии памяти
     
+    // ВСЕГДА фильтруем по последним 3 месяцам для экономии памяти
+    // Если нужен полный импорт, используем другой подход
+    const loadDateThreshold = filterLast3Months && dateThreshold 
+      ? dateThreshold 
+      : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) // Последние 90 дней по умолчанию
+    
+    console.log(`Загружаем только записи за последние 3 месяца (с ${loadDateThreshold.toLocaleDateString()}) для экономии памяти`)
+    
     while (true) {
-      const whereClause: any = {}
-      if (filterLast3Months && dateThreshold) {
-        whereClause.OR = [
-          { unloadingDate: { gte: dateThreshold } },
-          { acceptanceDate: { gte: dateThreshold } },
-          { shipmentPlan: { gte: dateThreshold } },
+      const whereClause: any = {
+        OR: [
+          { unloadingDate: { gte: loadDateThreshold } },
+          { acceptanceDate: { gte: loadDateThreshold } },
+          { shipmentPlan: { gte: loadDateThreshold } },
         ]
       }
 
       const batch = await prisma.registry.findMany({
-        where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
+        where: whereClause,
         select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true },
         skip,
         take: batchSize,
@@ -146,7 +155,7 @@ async function main() {
       await new Promise(resolve => setImmediate(resolve))
     }
     
-    console.log(`Загружено ${existingRegistriesMap.size} существующих записей registry`)
+    console.log(`Загружено ${existingRegistriesMap.size} существующих записей registry (только последние 3 месяца)`)
 
     let imported = 0
     let updated = 0
@@ -289,8 +298,11 @@ async function main() {
             })
             if (updateBatch.length >= BATCH_SIZE) await processBatches()
           } else {
+            // Проверяем только если запись не в памяти (для старых записей)
+            // Используем upsert для оптимизации - избегаем лишних запросов
             const existingInDb = await prisma.registry.findFirst({
-              where: { branch: rawBranch, orderType: rawOrderType, orderNumber: rawOrderNumber, clientTIN }
+              where: { branch: rawBranch, orderType: rawOrderType, orderNumber: rawOrderNumber, clientTIN },
+              select: { id: true }
             })
 
             if (existingInDb) {

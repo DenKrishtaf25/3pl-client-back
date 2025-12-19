@@ -90,15 +90,21 @@ async function main() {
     const clientTINsSet = new Set(allClients.map(c => c.TIN))
     console.log(`Загружено ${clientTINsSet.size} клиентов для проверки`)
 
-    // Загружаем существующие записи stock порциями для создания Map
-    // Используем только ключевые поля для экономии памяти
-    console.log('Загружаем существующие записи stock для сравнения...')
+    // Оптимизация: загружаем только последние записи stock для экономии памяти
+    // Stock не имеет дат, поэтому используем createdAt для фильтрации последних 3 месяцев
+    console.log('Загружаем существующие записи stock для сравнения (только последние 3 месяца)...')
     const existingStocksMap = new Map<string, { id: string; quantity: number }>()
+    
+    // ВСЕГДА фильтруем по последним 3 месяцам для экономии памяти
+    const loadDateThreshold = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) // Последние 90 дней
     
     let skip = 0
     const batchSize = 2000 // Уменьшено с 10000 для экономии памяти
     while (true) {
       const batch = await prisma.stock.findMany({
+        where: {
+          createdAt: { gte: loadDateThreshold }
+        },
         select: {
           id: true,
           warehouse: true,
@@ -125,7 +131,7 @@ async function main() {
       await new Promise(resolve => setImmediate(resolve))
     }
     
-    console.log(`Загружено ${existingStocksMap.size} существующих записей stock`)
+    console.log(`Загружено ${existingStocksMap.size} существующих записей stock (только последние 3 месяца)`)
 
     // Статистика импорта
     let imported = 0

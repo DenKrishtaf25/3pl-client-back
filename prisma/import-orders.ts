@@ -96,21 +96,24 @@ async function main() {
     const existingOrdersMap = new Map<string, { id: string }>()
     let skip = 0
     const batchSize = 2000 // Уменьшено с 10000 для экономии памяти
-    let totalLoaded = 0
     
-    console.log('Загружаем существующие записи orders...')
+    // ВСЕГДА фильтруем по последним 3 месяцам для экономии памяти
+    const loadDateThreshold = filterLast3Months && dateThreshold 
+      ? dateThreshold 
+      : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) // Последние 90 дней по умолчанию
+    
+    console.log(`Загружаем существующие записи orders (только последние 3 месяца с ${loadDateThreshold.toLocaleDateString()})...`)
     while (true) {
-      const whereClause: any = {}
-      if (filterLast3Months && dateThreshold) {
-        whereClause.OR = [
-          { exportDate: { gte: dateThreshold } },
-          { shipmentDate: { gte: dateThreshold } },
-          { acceptanceDate: { gte: dateThreshold } },
+      const whereClause: any = {
+        OR: [
+          { exportDate: { gte: loadDateThreshold } },
+          { shipmentDate: { gte: loadDateThreshold } },
+          { acceptanceDate: { gte: loadDateThreshold } },
         ]
       }
 
       const batch = await prisma.order.findMany({
-        where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
+        where: whereClause,
         select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true },
         skip,
         take: batchSize,
@@ -122,12 +125,7 @@ async function main() {
         existingOrdersMap.set(key, { id: order.id })
       })
       
-      totalLoaded += batch.length
       skip += batchSize
-      
-      if (totalLoaded % 10000 === 0) { // Уменьшено с 50000
-        console.log(`Загружено ${totalLoaded} записей в память...`)
-      }
       
       if (batch.length < batchSize) break
       
@@ -135,7 +133,7 @@ async function main() {
       await new Promise(resolve => setImmediate(resolve))
     }
     
-    console.log(`Загружено ${existingOrdersMap.size} существующих записей orders в память`)
+    console.log(`Загружено ${existingOrdersMap.size} существующих записей orders (только последние 3 месяца)`)
 
     let imported = 0
     let updated = 0

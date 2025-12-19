@@ -126,18 +126,23 @@ async function main() {
     let skip = 0
     const batchSize = 2000 // Уменьшено с 10000 для экономии памяти
     
+    // ВСЕГДА фильтруем по последним 3 месяцам для экономии памяти
+    const loadDateThreshold = filterLast3Months && dateThreshold 
+      ? dateThreshold 
+      : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) // Последние 90 дней по умолчанию
+    
+    console.log(`Загружаем существующие записи complaints (только последние 3 месяца с ${loadDateThreshold.toLocaleDateString()})...`)
     while (true) {
-      const whereClause: any = {}
-      if (filterLast3Months && dateThreshold) {
-        whereClause.OR = [
-          { creationDate: { gte: dateThreshold } },
-          { deadline: { gte: dateThreshold } },
-          { completionDate: { gte: dateThreshold } },
+      const whereClause: any = {
+        OR: [
+          { creationDate: { gte: loadDateThreshold } },
+          { deadline: { gte: loadDateThreshold } },
+          { completionDate: { gte: loadDateThreshold } },
         ]
       }
 
       const batch = await prisma.complaint.findMany({
-        where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
+        where: whereClause,
         select: { id: true, branch: true, complaintNumber: true, clientTIN: true, creationDate: true },
         skip,
         take: batchSize,
@@ -156,7 +161,7 @@ async function main() {
       await new Promise(resolve => setImmediate(resolve))
     }
     
-    console.log(`Загружено ${existingComplaintsMap.size} существующих записей complaints`)
+    console.log(`Загружено ${existingComplaintsMap.size} существующих записей complaints (только последние 3 месяца)`)
 
     let imported = 0
     let updated = 0

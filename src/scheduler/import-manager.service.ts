@@ -11,7 +11,7 @@ import { ComplaintsImportService } from './complaints-import.service'
 export class ImportManagerService implements OnModuleInit {
   private readonly logger = new Logger(ImportManagerService.name)
   private isInitialImportRunning = false
-  private readonly IMPORT_INTERVAL_MS = 20 * 60 * 1000 // 20 минут
+  private readonly IMPORT_INTERVAL_MS = 60 * 60 * 1000 // 60 минут (увеличено с 20 для предотвращения OOM)
   private timeoutId: NodeJS.Timeout | null = null
 
   constructor(
@@ -60,6 +60,16 @@ export class ImportManagerService implements OnModuleInit {
       const totalDuration = ((Date.now() - startTime) / 1000).toFixed(1)
       this.logger.log(`=== Последовательный импорт всех таблиц завершен за ${totalDuration} сек ===`)
 
+      // Дополнительная задержка после всех импортов для освобождения памяти
+      this.logger.log('Ожидание освобождения памяти после импорта...')
+      await new Promise(resolve => setTimeout(resolve, 10000)) // 10 секунд задержка
+      
+      // Принудительная сборка мусора после всех импортов
+      if (global.gc) {
+        global.gc()
+        this.logger.debug('Выполнена принудительная сборка мусора после всех импортов')
+      }
+
       // Планируем следующий цикл импортов
       this.scheduleNextImportCycle()
     } catch (error) {
@@ -85,13 +95,24 @@ export class ImportManagerService implements OnModuleInit {
       
       // Задержка между импортами для освобождения памяти
       // Даем Node.js время на сборку мусора
-      await new Promise(resolve => setTimeout(resolve, 2000)) // 2 секунды задержка
+      await new Promise(resolve => setTimeout(resolve, 5000)) // 5 секунд задержка (увеличено с 2)
+      
+      // Принудительная сборка мусора, если доступна
+      if (global.gc) {
+        global.gc()
+        this.logger.debug(`[${name}] Выполнена принудительная сборка мусора`)
+      }
     } catch (error) {
       const duration = ((Date.now() - startTime) / 1000).toFixed(1)
       this.logger.error(`[${name}] Ошибка при импорте за ${duration} сек:`, error)
       // Продолжаем выполнение следующих импортов даже при ошибке
       // Небольшая задержка даже после ошибки
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      await new Promise(resolve => setTimeout(resolve, 3000)) // 3 секунды задержка (увеличено с 1)
+      
+      // Принудительная сборка мусора после ошибки
+      if (global.gc) {
+        global.gc()
+      }
     }
   }
 
@@ -104,13 +125,13 @@ export class ImportManagerService implements OnModuleInit {
       clearTimeout(this.timeoutId)
     }
 
-    // Планируем следующий цикл импортов через 20 минут
+    // Планируем следующий цикл импортов через 60 минут (увеличено для предотвращения OOM)
     this.timeoutId = setTimeout(() => {
       this.runInitialImportsSequence()
     }, this.IMPORT_INTERVAL_MS)
 
     const nextRunTime = new Date(Date.now() + this.IMPORT_INTERVAL_MS)
-    this.logger.log(`Следующий цикл импортов запланирован на ${nextRunTime.toLocaleString()}`)
+    this.logger.log(`Следующий цикл импортов запланирован на ${nextRunTime.toLocaleString()} (через 60 минут)`)
   }
 
   /**

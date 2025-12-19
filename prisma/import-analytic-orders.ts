@@ -76,14 +76,19 @@ async function main() {
     let skip = 0
     const batchSize = 2000 // Уменьшено с 10000 для экономии памяти
     
+    // ВСЕГДА фильтруем по последним 3 месяцам для экономии памяти
+    const loadDateThreshold = filterLast3Months && dateThreshold 
+      ? dateThreshold 
+      : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) // Последние 90 дней по умолчанию
+    
+    console.log(`Загружаем существующие записи analytic_orders (только последние 3 месяца с ${loadDateThreshold.toLocaleDateString()})...`)
     while (true) {
-      const whereClause: any = {}
-      if (filterLast3Months && dateThreshold) {
-        whereClause.date = { gte: dateThreshold }
+      const whereClause: any = {
+        date: { gte: loadDateThreshold }
       }
 
       const batch = await prisma.analyticOrder.findMany({
-        where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
+        where: whereClause,
         select: { id: true, branch: true, clientTIN: true, date: true },
         skip,
         take: batchSize,
@@ -102,7 +107,7 @@ async function main() {
       await new Promise(resolve => setImmediate(resolve))
     }
     
-    console.log(`Загружено ${existingAnalyticOrdersMap.size} существующих записей analytic_orders`)
+    console.log(`Загружено ${existingAnalyticOrdersMap.size} существующих записей analytic_orders (только последние 3 месяца)`)
 
     let imported = 0
     let updated = 0
