@@ -93,7 +93,7 @@ async function main() {
     // Оптимизация: загружаем только последние записи stock для экономии памяти
     // Stock не имеет дат, поэтому используем createdAt для фильтрации последних 3 месяцев
     console.log('Загружаем существующие записи stock для сравнения (только последние 3 месяца)...')
-    const existingStocksMap = new Map<string, { id: string; quantity: number }>()
+    const existingStocksMap = new Map<string, { id: string; quantity: number; counterparty: string }>()
     
     // ВСЕГДА фильтруем по последним 3 месяцам для экономии памяти
     const loadDateThreshold = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) // Последние 90 дней
@@ -111,6 +111,7 @@ async function main() {
           nomenclature: true,
           article: true,
           quantity: true,
+          counterparty: true,
           clientTIN: true,
         },
         skip,
@@ -121,7 +122,7 @@ async function main() {
       
       batch.forEach(stock => {
         const key = stockKey(stock.warehouse, stock.nomenclature, stock.article, stock.clientTIN)
-        existingStocksMap.set(key, { id: stock.id, quantity: stock.quantity })
+        existingStocksMap.set(key, { id: stock.id, quantity: stock.quantity, counterparty: stock.counterparty })
       })
       
       skip += batchSize
@@ -145,8 +146,8 @@ async function main() {
 
     // Батчинг для операций с БД (уменьшено для экономии памяти)
     const BATCH_SIZE = 100
-    const createBatch: Array<{ warehouse: string; nomenclature: string; article: string; quantity: number; clientTIN: string }> = []
-    const updateBatch: Array<{ id: string; quantity: number }> = []
+    const createBatch: Array<{ warehouse: string; nomenclature: string; article: string; quantity: number; counterparty: string; clientTIN: string }> = []
+    const updateBatch: Array<{ id: string; quantity: number; counterparty: string }> = []
 
     // Функция для обработки батчей
     async function processBatches() {
@@ -165,7 +166,7 @@ async function main() {
         try {
           await prisma.stock.update({
             where: { id: update.id },
-            data: { quantity: update.quantity },
+            data: { quantity: update.quantity, counterparty: update.counterparty },
           })
           updated++
         } catch (error) {
@@ -228,6 +229,7 @@ async function main() {
           }
           
           const rawWarehouse = record.Склад ? cleanValue(String(record.Склад)) : ''
+          const rawCounterparty = record.Поклажедатель ? cleanValue(String(record.Поклажедатель)) : ''
           const rawClientTIN = record.ИНН ? cleanValue(String(record.ИНН)) : ''
           const rawNomenclature = record.Наименование ? cleanValue(String(record.Наименование)) : ''
           const rawArticle = record.Артикул ? cleanValue(String(record.Артикул)) : ''
@@ -286,8 +288,9 @@ async function main() {
           const existingStock = existingStocksMap.get(key)
           
           if (existingStock) {
-            if (existingStock.quantity !== quantity) {
-              updateBatch.push({ id: existingStock.id, quantity })
+            // Обновляем если изменилось количество или контрагент
+            if (existingStock.quantity !== quantity || existingStock.counterparty !== rawCounterparty) {
+              updateBatch.push({ id: existingStock.id, quantity, counterparty: rawCounterparty })
               if (updateBatch.length >= BATCH_SIZE) {
                 await processBatches()
               }
@@ -304,8 +307,8 @@ async function main() {
             })
 
             if (existingInDb) {
-              if (existingInDb.quantity !== quantity) {
-                updateBatch.push({ id: existingInDb.id, quantity })
+              if (existingInDb.quantity !== quantity || existingInDb.counterparty !== rawCounterparty) {
+                updateBatch.push({ id: existingInDb.id, quantity, counterparty: rawCounterparty })
                 if (updateBatch.length >= BATCH_SIZE) {
                   await processBatches()
                 }
@@ -316,6 +319,7 @@ async function main() {
                 nomenclature: rawNomenclature,
                 article: rawArticle,
                 quantity: quantity,
+                counterparty: rawCounterparty,
                 clientTIN: clientTIN,
               })
               

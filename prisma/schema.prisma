@@ -59,6 +59,7 @@ model Stock {
   nomenclature String
   article      String
   quantity     Int
+  counterparty String?
 
   client    Client @relation(fields: [clientTIN], references: [TIN])
   clientTIN String @map("client_tin")

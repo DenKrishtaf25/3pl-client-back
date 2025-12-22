@@ -78,6 +78,11 @@ function parseDate(dateStr: string): Date | null {
 function parseBoolean(value: string): boolean {
   if (!value) return false
   const cleaned = value.trim()
+  // Обрабатываем 0.0 -> false, 1.0 -> true
+  const numValue = parseFloat(cleaned)
+  if (!isNaN(numValue)) {
+    return numValue === 1.0
+  }
   return cleaned === '1' || cleaned.toLowerCase() === 'true'
 }
 

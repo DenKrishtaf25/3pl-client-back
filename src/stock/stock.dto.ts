@@ -15,6 +15,9 @@ export class StockDto {
   quantity: number
 
   @IsString()
+  counterparty: string
+
+  @IsString()
   clientTIN: string
 }
 
@@ -37,6 +40,10 @@ export class UpdateStockDto {
 
   @IsOptional()
   @IsString()
+  counterparty?: string
+
+  @IsOptional()
+  @IsString()
   clientTIN?: string
 }
 
@@ -56,6 +63,10 @@ export class FindStockDto {
   @IsOptional()
   @IsString()
   article?: string
+
+  @IsOptional()
+  @IsString()
+  counterparty?: string
 
   @IsOptional()
   @Type(() => Number)

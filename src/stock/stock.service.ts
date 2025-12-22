@@ -168,17 +168,25 @@ export class StockService {
       }
     }
 
+    if (dto.counterparty) {
+      const counterpartyTerm = dto.counterparty.trim()
+      if (counterpartyTerm) {
+        where.counterparty = { contains: counterpartyTerm, mode: 'insensitive' }
+      }
+    }
+
     // Общий поиск (если указан, работает вместе с отдельными фильтрами)
     if (dto.search) {
       const searchTerm = dto.search.trim()
       if (searchTerm) {
         // Если уже есть фильтры по отдельным полям, добавляем OR условие
         // Иначе используем OR для поиска по всем полям
-        if (!dto.warehouse && !dto.nomenclature && !dto.article) {
+        if (!dto.warehouse && !dto.nomenclature && !dto.article && !dto.counterparty) {
           where.OR = [
             { warehouse: { contains: searchTerm, mode: 'insensitive' } },
             { nomenclature: { contains: searchTerm, mode: 'insensitive' } },
             { article: { contains: searchTerm, mode: 'insensitive' } },
+            { counterparty: { contains: searchTerm, mode: 'insensitive' } },
           ]
         }
         // Если есть отдельные фильтры, search игнорируется (приоритет у отдельных фильтров)
@@ -208,6 +216,7 @@ export class StockService {
         nomenclature: true,
         article: true,
         quantity: true,
+        counterparty: true,
         clientTIN: true,
         createdAt: true,
         updatedAt: true,
@@ -282,6 +291,7 @@ export class StockService {
         nomenclature: dto.nomenclature,
         article: dto.article,
         quantity: dto.quantity,
+        counterparty: dto.counterparty,
         clientTIN: dto.clientTIN
       },
       include: { client: true }
@@ -331,6 +341,7 @@ export class StockService {
         ...(dto.nomenclature && { nomenclature: dto.nomenclature }),
         ...(dto.article && { article: dto.article }),
         ...(dto.quantity !== undefined && { quantity: dto.quantity }),
+        ...(dto.counterparty && { counterparty: dto.counterparty }),
         ...(dto.clientTIN && { clientTIN: dto.clientTIN })
       },
       include: { client: true }
