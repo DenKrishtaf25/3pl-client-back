@@ -83,7 +83,9 @@ export class OrderService {
 
   async findAllWithPagination(dto: FindOrderDto, userId: string, userRole: string) {
     const page = dto.page || 1
-    const limit = Math.min(dto.limit || 20, 50) // Максимум 50 записей
+    // Для экспорта разрешаем до 100000 записей, для обычных запросов максимум 50
+    const requestedLimit = dto.limit || 20
+    const limit = requestedLimit > 50 ? Math.min(requestedLimit, 100000) : Math.min(requestedLimit, 50)
     const skip = (page - 1) * limit
 
     // Получаем список клиентов пользователя

@@ -13,7 +13,15 @@ export class UserStockController {
 
   @Get()
   @Auth()
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @UsePipes(new ValidationPipe({ 
+    transform: true, 
+    whitelist: true,
+    forbidNonWhitelisted: false, // Разрешаем дополнительные параметры для длинных query строк
+    skipMissingProperties: false,
+    transformOptions: {
+      enableImplicitConversion: true,
+    }
+  }))
   async findAll(
     @CurrentUser('id') userId: string,
     @CurrentUser('role') userRole: string,

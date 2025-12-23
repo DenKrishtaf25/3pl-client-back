@@ -15,7 +15,15 @@ export class UserOrderController {
 
   @Get()
   @Auth()
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @UsePipes(new ValidationPipe({ 
+    transform: true, 
+    whitelist: true,
+    forbidNonWhitelisted: false, // Разрешаем дополнительные параметры для длинных query строк
+    skipMissingProperties: false,
+    transformOptions: {
+      enableImplicitConversion: true,
+    }
+  }))
   async findAll(
     @CurrentUser('id') userId: string,
     @CurrentUser('role') userRole: string,
@@ -53,7 +61,15 @@ export class AdminOrderController {
 
   @Get()
   @Roles('ADMIN')
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @UsePipes(new ValidationPipe({ 
+    transform: true, 
+    whitelist: true,
+    forbidNonWhitelisted: false, // Разрешаем дополнительные параметры для длинных query строк
+    skipMissingProperties: false,
+    transformOptions: {
+      enableImplicitConversion: true,
+    }
+  }))
   async findAll(
     @CurrentUser('id') userId: string,
     @CurrentUser('role') userRole: string,

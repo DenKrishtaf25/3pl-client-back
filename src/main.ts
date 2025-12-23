@@ -6,6 +6,18 @@ import { AppModule } from './app.module'
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule)
 	const configService = app.get(ConfigService)
+	
+	// Настраиваем Express для поддержки длинных URL (до 100KB для query строки)
+	const expressApp = app.getHttpAdapter().getInstance()
+	expressApp.set('query parser', 'extended')
+	expressApp.set('query parser fn', (str: string) => {
+		const qs = require('qs')
+		return qs.parse(str, { 
+			allowPrototypes: true,
+			arrayLimit: Infinity,
+			parameterLimit: 100000 
+		})
+	})
 
 	// Поддержка нескольких origins через запятую или одного origin
 	const frontendUrls = configService.get<string>('FRONTEND_URL', 'http://localhost:3000')
