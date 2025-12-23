@@ -5,8 +5,16 @@ import { join } from 'path'
 import * as iconv from 'iconv-lite'
 import { pipeline } from 'stream/promises'
 import { Transform } from 'stream'
+import { randomBytes } from 'crypto'
 
 const prisma = new PrismaClient()
+
+// Простая функция для генерации ID, похожего на cuid
+function generateId(): string {
+  const timestamp = Date.now().toString(36)
+  const random = randomBytes(6).toString('hex')
+  return `c${timestamp}${random}`
+}
 
 interface OrderCsvRow {
   Филиал: string
@@ -151,28 +159,38 @@ async function main() {
     async function processBatches() {
       // Используем raw SQL для создания записей, чтобы избежать конвертации часового пояса
       if (createBatch.length > 0) {
+        console.log(`Обрабатываем batch создания: ${createBatch.length} записей`)
         const createConcurrency = 50
+        let batchErrors = 0
         for (let i = 0; i < createBatch.length; i += createConcurrency) {
           const batch = createBatch.slice(i, i + createConcurrency)
-          await Promise.all(
+          const batchResults = await Promise.allSettled(
             batch.map(async (item) => {
+              const params: any[] = []
+              let paramIndex = 1
+              let exportDateParam = ''
+              let shipmentDateParam = 'NULL'
+              let acceptanceDateParam = 'NULL'
+              
               try {
-                const params: any[] = []
-                let paramIndex = 1
+                // Генерируем ID на стороне клиента (cuid-подобный формат)
+                const orderId = generateId()
+                
+                // Начинаем с orderId как первого параметра
+                params.push(orderId)
+                let paramIndex = 2 // Начинаем с 2, так как $1 = orderId
                 
                 // Добавляем даты как строки
                 params.push(item.dateStrings.exportDate)
-                const exportDateParam = `$${paramIndex}::timestamp`
+                exportDateParam = `$${paramIndex}::timestamp`
                 paramIndex++
                 
-                let shipmentDateParam = 'NULL'
                 if (item.dateStrings.shipmentDate) {
                   params.push(item.dateStrings.shipmentDate)
                   shipmentDateParam = `$${paramIndex}::timestamp`
                   paramIndex++
                 }
                 
-                let acceptanceDateParam = 'NULL'
                 if (item.dateStrings.acceptanceDate) {
                   params.push(item.dateStrings.acceptanceDate)
                   acceptanceDateParam = `$${paramIndex}::timestamp`
@@ -180,6 +198,7 @@ async function main() {
                 }
                 
                 // Добавляем остальные поля
+                const baseParamIndex = paramIndex
                 params.push(
                   item.data.branch,
                   item.data.orderType,
@@ -194,40 +213,99 @@ async function main() {
                   item.data.clientTIN
                 )
                 
+                // Проверяем соответствие количества параметров
+                // 1 (orderId) + даты + 11 остальных полей
+                const expectedParams = 1 + // orderId
+                  1 + // exportDate
+                  (shipmentDateParam !== 'NULL' ? 1 : 0) + // shipmentDate
+                  (acceptanceDateParam !== 'NULL' ? 1 : 0) + // acceptanceDate
+                  11 // остальные поля
+                
+                if (params.length !== expectedParams) {
+                  throw new Error(`Несоответствие количества параметров: ожидается ${expectedParams}, получено ${params.length}`)
+                }
+                
+                // Логируем первую запись для отладки
+                if (imported === 0 && errors === 0) {
+                  console.log(`\n=== Первая запись для INSERT ===`)
+                  console.log(`OrderId: ${orderId}`)
+                  console.log(`Параметры (${params.length}):`, params.slice(0, 5), '...')
+                  console.log(`SQL параметры: exportDate=${exportDateParam}, shipmentDate=${shipmentDateParam}, acceptanceDate=${acceptanceDateParam}`)
+                  console.log(`baseParamIndex=${baseParamIndex}, expectedParams=${expectedParams}`)
+                  console.log(`Данные:`, JSON.stringify(item.data, null, 2))
+                }
+                
+                // Выполняем INSERT с правильной нумерацией параметров
                 await prisma.$executeRawUnsafe(`
                   INSERT INTO "order" (
+                    id, created_at, updated_at,
                     export_date, shipment_date, acceptance_date,
                     branch, order_type, order_number, kis_number, status,
                     packages_planned, packages_actual, lines_planned, lines_actual,
                     counterparty, client_tin
                   ) VALUES (
+                    $1, NOW(), NOW(),
                     ${exportDateParam}, ${shipmentDateParam}, ${acceptanceDateParam},
-                    $${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4},
-                    $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8},
-                    $${paramIndex + 9}, $${paramIndex + 10}
+                    $${baseParamIndex}, $${baseParamIndex + 1}, $${baseParamIndex + 2}, $${baseParamIndex + 3}, $${baseParamIndex + 4},
+                    $${baseParamIndex + 5}, $${baseParamIndex + 6}, $${baseParamIndex + 7}, $${baseParamIndex + 8},
+                    $${baseParamIndex + 9}, $${baseParamIndex + 10}
                   )
                 `, ...params)
                 
                 imported++
+                return { success: true }
               } catch (error) {
                 errors++
+                const errorNum = errors
+                if (errorNum <= 20) {
+                  console.error(`\n=== Ошибка при создании записи #${errorNum} ===`)
+                  console.error(`Ошибка:`, error instanceof Error ? error.message : String(error))
+                  if (error instanceof Error && error.stack) {
+                    console.error(`Stack:`, error.stack.split('\n').slice(0, 5).join('\n'))
+                  }
+                  console.error(`Параметры (${params.length}):`, params.slice(0, 5), '...')
+                  console.error(`Данные:`, JSON.stringify(item.data, null, 2))
+                  console.error(`SQL параметры: exportDate=${exportDateParam}, shipmentDate=${shipmentDateParam}, acceptanceDate=${acceptanceDateParam}, paramIndex=${paramIndex}`)
+                }
+                throw error // Пробрасываем ошибку, чтобы Promise.allSettled её поймал
               }
             })
           )
+          
+          // Обрабатываем результаты Promise.allSettled
+          let successCount = 0
+          let failCount = 0
+          for (const result of batchResults) {
+            if (result.status === 'fulfilled' && result.value?.success) {
+              successCount++
+            } else {
+              failCount++
+              if (failCount <= 5 && result.status === 'rejected') {
+                console.error(`Promise rejected в батче:`, result.reason?.message || result.reason)
+              }
+            }
+          }
+          
+          if (i === 0) {
+            console.log(`Первый батч: успешно ${successCount}, ошибок ${failCount} из ${batch.length}`)
+          }
         }
         createBatch.length = 0
       }
 
       // Используем raw queries для обновления дат, чтобы избежать конвертации часового пояса
+      if (updateBatch.length > 0) {
+        console.log(`Обрабатываем batch обновления: ${updateBatch.length} записей`)
+      }
       const updateConcurrency = 50
       for (let i = 0; i < updateBatch.length; i += updateConcurrency) {
         const batch = updateBatch.slice(i, i + updateConcurrency)
         await Promise.all(
           batch.map(async (update) => {
+            // Всегда используем raw query для правильного сохранения дат
+            const dateParts: string[] = []
+            const params: any[] = []
             try {
-              // Всегда используем raw query для правильного сохранения дат
-              const dateParts: string[] = []
-              const params: any[] = []
               let paramIndex = 1
               
               // Обрабатываем даты
@@ -309,6 +387,11 @@ async function main() {
               updated++
             } catch (error) {
               errors++
+              if (errors <= 10) {
+                console.error(`Ошибка при обновлении записи:`, error)
+                console.error(`ID:`, update.id)
+                console.error(`Параметры:`, params)
+              }
             }
           })
         )
@@ -323,10 +406,12 @@ async function main() {
         try {
           if (isFirstChunk) {
             isFirstChunk = false
+            // Удаляем BOM (UTF-8 SIG) если есть
             if (chunk[0] === 0xEF && chunk[1] === 0xBB && chunk[2] === 0xBF) {
               chunk = chunk.slice(3)
             }
           }
+          // Декодируем как UTF-8
           const decoded = chunk.toString('utf-8')
           this.push(decoded)
           callback()
@@ -341,6 +426,9 @@ async function main() {
       skip_empty_lines: true,
       trim: true,
       relax_column_count: true,
+      bom: true, // Автоматически удаляет BOM (UTF-8 SIG)
+      quote: '"', // Явно указываем кавычки
+      escape: '"', // Экранирование кавычек
     })
 
     let isFirstDataRecord = true
@@ -373,9 +461,11 @@ async function main() {
           const rawClientTIN = record.ИНН ? cleanValue(String(record.ИНН)) : ''
 
           if (!rawBranch || !rawClientTIN || !rawOrderType || !rawOrderNumber || !rawStatus) {
-            if (rowNumber <= 5) {
-              console.log(`Строка ${rowNumber}: Пропущена. Значения: Филиал="${rawBranch}", ИНН="${rawClientTIN}", Тип="${rawOrderType}", Номер="${rawOrderNumber}", Статус="${rawStatus}"`)
-              console.log(`Строка ${rowNumber}: Ключи record:`, Object.keys(record))
+            if (rowNumber <= 10) {
+              console.log(`Строка ${rowNumber}: Пропущена - отсутствуют обязательные поля`)
+              console.log(`  Филиал="${rawBranch}", ИНН="${rawClientTIN}", Тип="${rawOrderType}", Номер="${rawOrderNumber}", Статус="${rawStatus}"`)
+              console.log(`  Ключи record:`, Object.keys(record))
+              console.log(`  Все значения record:`, record)
             }
             skippedRecords.push({ row: rowNumber, reason: 'Отсутствуют обязательные поля' })
             skipped++
@@ -384,6 +474,10 @@ async function main() {
 
           const clientTIN = rawClientTIN.replace(/\D/g, '')
           if (!clientTIN || !clientTINsSet.has(clientTIN)) {
+            if (rowNumber <= 10) {
+              console.log(`Строка ${rowNumber}: Пропущена - клиент с ИНН "${clientTIN}" (из "${rawClientTIN}") не найден в БД`)
+              console.log(`  Всего клиентов в БД: ${clientTINsSet.size}`)
+            }
             skippedRecords.push({ row: rowNumber, reason: `Клиент с ИНН ${clientTIN} не найден` })
             skipped++
             return callback()
@@ -407,6 +501,11 @@ async function main() {
               (acceptanceDate && acceptanceDate >= dateThreshold)
             
             if (!hasRecentDate) {
+              if (rowNumber <= 10) {
+                console.log(`Строка ${rowNumber}: Пропущена - дата старше 3 месяцев`)
+                console.log(`  exportDate: ${exportDate}, shipmentDate: ${shipmentDate}, acceptanceDate: ${acceptanceDate}`)
+                console.log(`  Порог: ${dateThreshold}`)
+              }
               skipped++
               return callback()
             }
@@ -475,7 +574,15 @@ async function main() {
           if (rowNumber % 1000 === 0) {
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
             const rate = (rowNumber / (Date.now() - startTime)) * 1000
-            console.log(`Обработано ${rowNumber} записей | Импортировано: ${imported} | Обновлено: ${updated} | Скорость: ${rate.toFixed(0)} зап/сек`)
+            console.log(`Обработано ${rowNumber} записей | Импортировано: ${imported} | Обновлено: ${updated} | Пропущено: ${skipped} | Скорость: ${rate.toFixed(0)} зап/сек`)
+          }
+          
+          // Логируем первые несколько успешно обработанных записей
+          if (rowNumber <= 5) {
+            console.log(`Строка ${rowNumber}: Успешно обработана`)
+            console.log(`  Филиал: ${rawBranch}, Тип: ${rawOrderType}, Номер: ${rawOrderNumber}`)
+            console.log(`  ИНН: ${clientTIN}, Статус: ${rawStatus}`)
+            console.log(`  Будет создана: ${!existingOrder}, Будет обновлена: ${!!existingOrder}`)
           }
         } catch (error) {
           errors++
@@ -486,7 +593,14 @@ async function main() {
     })
 
     await pipeline(readStream, decodeStream, parser, processStream)
+    
+    console.log(`\nОбработка CSV завершена. Всего строк обработано: ${rowNumber}`)
+    console.log(`Записей в createBatch: ${createBatch.length}`)
+    console.log(`Записей в updateBatch: ${updateBatch.length}`)
+    
     await processBatches()
+    
+    console.log(`После processBatches: Импортировано: ${imported}, Обновлено: ${updated}`)
 
     // Удаляем записи, отсутствующие в CSV
     // При фильтрации удаляем только записи из диапазона последних 3 месяцев
