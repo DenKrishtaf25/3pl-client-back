@@ -117,7 +117,7 @@ export class FindComplaintDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(50)
+  @Max(100000)
   limit?: number
 
   @IsOptional()
