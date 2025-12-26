@@ -39,6 +39,10 @@
         "remove-duplicates:stock": "ts-node prisma/check-duplicates-stock.ts --delete",
         "remove-duplicates:stock:prod": "node dist/prisma/check-duplicates-stock.js --delete",
         "check:finance-dates": "ts-node prisma/check-finance-dates.ts",
+        "check:orders-duplicates": "ts-node prisma/check-orders-duplicates.ts",
+        "remove-duplicates:orders": "ts-node prisma/remove-duplicates-orders.ts",
+        "remove-duplicates:orders:check": "ts-node prisma/remove-duplicates-orders.ts --check",
+        "remove-duplicates:orders:prod": "node dist/prisma/remove-duplicates-orders.js",
         "build:import": "tsc prisma/import-clients.ts --outDir dist/prisma --module commonjs --target ES2021 --esModuleInterop --resolveJsonModule --skipLibCheck"
     },
     "dependencies": {

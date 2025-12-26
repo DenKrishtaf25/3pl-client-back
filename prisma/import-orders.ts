@@ -55,9 +55,26 @@ function parseDate(dateStr: string): Date | null {
 
 function parseInteger(value: string): number {
   if (!value) return 0
-  const cleaned = value.trim().replace(/,/g, '').replace(/\s/g, '')
-  const num = parseInt(cleaned, 10)
-  return isNaN(num) ? 0 : num
+  const cleaned = value.trim().replace(/,/g, '').replace(/\s/g, '').replace(/\./g, '')
+  // Пробуем парсить как число
+  let num = parseInt(cleaned, 10)
+  if (isNaN(num)) {
+    // Если не получилось, пробуем parseFloat и округляем
+    const floatNum = parseFloat(cleaned)
+    num = isNaN(floatNum) ? 0 : Math.round(floatNum)
+  }
+  // Ограничиваем значение максимальным для Int (32-bit signed integer)
+  const MAX_INT = 2147483647
+  const MIN_INT = -2147483648
+  if (num > MAX_INT) {
+    console.warn(`Значение ${num} (из "${value}") превышает MAX_INT, обрезано до ${MAX_INT}`)
+    return MAX_INT
+  }
+  if (num < MIN_INT) {
+    console.warn(`Значение ${num} (из "${value}") меньше MIN_INT, обрезано до ${MIN_INT}`)
+    return MIN_INT
+  }
+  return num
 }
 
 const orderKey = (b: string, ot: string, on: string, t: string) => `${b}|${ot}|${on}|${t}`
@@ -113,7 +130,12 @@ async function main() {
       if (batch.length === 0) break
       
       batch.forEach(order => {
-        const key = orderKey(order.branch, order.orderType, order.orderNumber, order.clientTIN)
+        // Нормализуем данные так же, как при обработке CSV (trim)
+        const normalizedBranch = order.branch.trim()
+        const normalizedOrderType = order.orderType.trim()
+        const normalizedOrderNumber = order.orderNumber.trim()
+        const normalizedClientTIN = order.clientTIN.trim()
+        const key = orderKey(normalizedBranch, normalizedOrderType, normalizedOrderNumber, normalizedClientTIN)
         existingOrdersMap.set(key, { id: order.id })
       })
       
@@ -149,12 +171,102 @@ async function main() {
       if (createBatch.length > 0) {
         const batchSize = createBatch.length
         const startTime = Date.now()
-        await prisma.order.createMany({ data: createBatch, skipDuplicates: true })
+        
+        // Фильтруем записи, которые уже есть в памяти
+        const recordsToCheck = createBatch.filter(record => {
+          const key = orderKey(record.branch, record.orderType, record.orderNumber, record.clientTIN)
+          return !existingOrdersMap.has(key)
+        })
+        
+        // Проверяем батчами в БД, какие записи уже существуют
+        const recordsToCreate: any[] = []
+        if (recordsToCheck.length > 0) {
+          // Группируем по 50 записей для проверки
+          const checkBatchSize = 50
+          for (let i = 0; i < recordsToCheck.length; i += checkBatchSize) {
+            const batch = recordsToCheck.slice(i, i + checkBatchSize)
+            const existingInDb = await prisma.order.findMany({
+              where: {
+                OR: batch.map(record => ({
+                  branch: record.branch,
+                  orderType: record.orderType,
+                  orderNumber: record.orderNumber,
+                  clientTIN: record.clientTIN,
+                }))
+              },
+              select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true }
+            })
+            
+            // Создаем Set существующих ключей (с нормализацией через trim)
+            const existingKeys = new Set(
+              existingInDb.map(order => {
+                const normalizedBranch = order.branch.trim()
+                const normalizedOrderType = order.orderType.trim()
+                const normalizedOrderNumber = order.orderNumber.trim()
+                const normalizedClientTIN = order.clientTIN.trim()
+                return orderKey(normalizedBranch, normalizedOrderType, normalizedOrderNumber, normalizedClientTIN)
+              })
+            )
+            
+            // Создаем Map для быстрого поиска ID (с нормализацией через trim)
+            const existingMap = new Map(
+              existingInDb.map(order => {
+                const normalizedBranch = order.branch.trim()
+                const normalizedOrderType = order.orderType.trim()
+                const normalizedOrderNumber = order.orderNumber.trim()
+                const normalizedClientTIN = order.clientTIN.trim()
+                return [
+                  orderKey(normalizedBranch, normalizedOrderType, normalizedOrderNumber, normalizedClientTIN),
+                  order.id
+                ]
+              })
+            )
+            
+            // Разделяем на создание и обновление
+            for (const record of batch) {
+              const key = orderKey(record.branch, record.orderType, record.orderNumber, record.clientTIN)
+              if (existingKeys.has(key)) {
+                // Запись существует, добавляем в updateBatch
+                const existingId = existingMap.get(key)!
+                updateBatch.push({
+                  id: existingId,
+                  data: {
+                    branch: record.branch,
+                    orderType: record.orderType,
+                    orderNumber: record.orderNumber,
+                    kisNumber: record.kisNumber,
+                    exportDate: record.exportDate,
+                    shipmentDate: record.shipmentDate,
+                    status: record.status,
+                    packagesPlanned: record.packagesPlanned,
+                    packagesActual: record.packagesActual,
+                    linesPlanned: record.linesPlanned,
+                    linesActual: record.linesActual,
+                    counterparty: record.counterparty,
+                    acceptanceDate: record.acceptanceDate,
+                  }
+                })
+                // Добавляем в память
+                existingOrdersMap.set(key, { id: existingId })
+              } else {
+                // Запись новая, добавляем в createBatch
+                recordsToCreate.push(record)
+                // Добавляем в память с временным ID
+                existingOrdersMap.set(key, { id: '' })
+              }
+            }
+          }
+        }
+        
+        if (recordsToCreate.length > 0) {
+          await prisma.order.createMany({ data: recordsToCreate, skipDuplicates: true })
+          imported += recordsToCreate.length
+        }
+        
         const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-        imported += batchSize
         createBatch.length = 0
         if (batchSize >= 100) {
-          console.log(`[processBatches] Создано ${batchSize} записей за ${duration} сек`)
+          console.log(`[processBatches] Создано ${recordsToCreate.length}/${batchSize} записей за ${duration} сек (${batchSize - recordsToCreate.length} были дубликатами)`)
         }
       }
 
@@ -169,11 +281,24 @@ async function main() {
           await Promise.all(
             batch.map(async (update) => {
               try {
+                // Логируем обновления с нужным КИС номером
+                if (update.data.kisNumber && (update.data.kisNumber.includes('ЮБА0502021_20230502') || update.data.kisNumber.includes('ЮБА0502021_2023050244'))) {
+                  console.log(`[DEBUG UPDATE] Обновляем ID=${update.id} с КИС=${update.data.kisNumber}`)
+                  const before = await prisma.order.findUnique({ where: { id: update.id }, select: { kisNumber: true } })
+                  console.log(`[DEBUG UPDATE] До обновления КИС=${before?.kisNumber}`)
+                }
                 await prisma.order.update({ where: { id: update.id }, data: update.data })
+                if (update.data.kisNumber && (update.data.kisNumber.includes('ЮБА0502021_20230502') || update.data.kisNumber.includes('ЮБА0502021_2023050244'))) {
+                  const after = await prisma.order.findUnique({ where: { id: update.id }, select: { kisNumber: true } })
+                  console.log(`[DEBUG UPDATE] После обновления КИС=${after?.kisNumber}`)
+                }
                 updated++
                 updateCount++
               } catch (error) {
                 errors++
+                if (update.data.kisNumber && (update.data.kisNumber.includes('ЮБА0502021_20230502') || update.data.kisNumber.includes('ЮБА0502021_2023050244'))) {
+                  console.error(`[DEBUG ERROR] Ошибка при обновлении ID=${update.id}:`, error)
+                }
               }
             })
           )
@@ -239,10 +364,18 @@ async function main() {
             console.log('Ключи записи:', Object.keys(record))
           }
           
-          const rawBranch = record.Филиал ? cleanValue(String(record.Филиал)) : ''
-          const rawOrderType = record['Тип заказа'] ? cleanValue(String(record['Тип заказа'])) : ''
-          const rawOrderNumber = record['Номер заказа'] ? cleanValue(String(record['Номер заказа'])) : ''
-          const rawKisNumber = record['Номер заказа КИС'] ? cleanValue(String(record['Номер заказа КИС'])) : ''
+          const rawBranch = record.Филиал ? cleanValue(String(record.Филиал)).trim() : ''
+          const rawOrderType = record['Тип заказа'] ? cleanValue(String(record['Тип заказа'])).trim() : ''
+          const rawOrderNumber = record['Номер заказа'] ? cleanValue(String(record['Номер заказа'])).trim() : ''
+          const rawKisNumber = record['Номер заказа КИС'] ? cleanValue(String(record['Номер заказа КИС'])).trim() : ''
+          
+          // Логируем записи с нужным КИС номером для отладки
+          if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
+            console.log(`\n[DEBUG] Найдена запись с КИС: ${rawKisNumber}`)
+            console.log(`  Строка: ${rowNumber}`)
+            console.log(`  Филиал: ${rawBranch}, Тип: ${rawOrderType}, Номер: ${rawOrderNumber}`)
+            console.log(`  ИНН: ${record.ИНН}`)
+          }
           const rawExportDate = record['Дата выгрузки заказа'] ? String(record['Дата выгрузки заказа']) : ''
           const rawShipmentDate = record['Плановая дата отгрузки'] ? String(record['Плановая дата отгрузки']) : ''
           const rawStatus = record.Статус ? cleanValue(String(record.Статус)) : ''
@@ -266,6 +399,9 @@ async function main() {
 
           const clientTIN = rawClientTIN.replace(/\D/g, '')
           if (!clientTIN || !clientTINsSet.has(clientTIN)) {
+            if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
+              console.log(`[DEBUG] Пропущена - клиент с ИНН ${clientTIN} не найден`)
+            }
             skippedRecords.push({ row: rowNumber, reason: `Клиент с ИНН ${clientTIN} не найден` })
             skipped++
             return callback()
@@ -283,6 +419,9 @@ async function main() {
               (acceptanceDate && acceptanceDate >= dateThreshold)
             
             if (!hasRecentDate) {
+              if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
+                console.log(`[DEBUG] Пропущена - дата старше 3 месяцев: exportDate=${exportDate}, shipmentDate=${shipmentDate}, acceptanceDate=${acceptanceDate}`)
+              }
               skipped++
               return callback()
             }
@@ -310,6 +449,9 @@ async function main() {
           const existingOrder = existingOrdersMap.get(key)
 
           if (existingOrder) {
+            if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
+              console.log(`[DEBUG] Найдена в памяти: ID=${existingOrder.id}, будет обновлена с КИС=${rawKisNumber}`)
+            }
             updateBatch.push({
               id: existingOrder.id,
               data: {
@@ -333,23 +475,71 @@ async function main() {
               await processBatches()
             }
           } else {
-            createBatch.push({
-              branch: rawBranch,
-              orderType: rawOrderType,
-              orderNumber: rawOrderNumber,
-              kisNumber: rawKisNumber || '',
-              exportDate,
-              shipmentDate,
-              status: rawStatus,
-              packagesPlanned,
-              packagesActual,
-              linesPlanned,
-              linesActual,
-              counterparty: rawCounterparty || 'Не указан',
-              acceptanceDate,
-              clientTIN,
-            })
-            if (createBatch.length >= BATCH_SIZE) await processBatches()
+            // Проверяем в БД на случай, если запись не в памяти (для старых записей или при полном импорте)
+            if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
+              console.log(`[DEBUG] Ищем в БД: branch="${rawBranch}", orderType="${rawOrderType}", orderNumber="${rawOrderNumber}", clientTIN="${clientTIN}"`)
+            }
+            // Используем raw query с TRIM для точного сравнения (учитываем возможные пробелы в БД)
+            const existingInDbResult = await prisma.$queryRaw<Array<{ id: string; kis_number: string }>>`
+              SELECT id, kis_number
+              FROM "order"
+              WHERE TRIM(branch) = ${rawBranch}
+                AND TRIM(order_type) = ${rawOrderType}
+                AND TRIM(order_number) = ${rawOrderNumber}
+                AND TRIM(client_tin) = ${clientTIN}
+              LIMIT 1
+            `
+            const existingInDb = existingInDbResult[0] ? { id: existingInDbResult[0].id, kisNumber: existingInDbResult[0].kis_number } : null
+
+            if (existingInDb) {
+              if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
+                console.log(`[DEBUG] Найдена в БД: ID=${existingInDb.id}, текущий КИС="${existingInDb.kisNumber}", новый КИС="${rawKisNumber}"`)
+              }
+              updateBatch.push({
+                id: existingInDb.id,
+                data: {
+                  branch: rawBranch,
+                  orderType: rawOrderType,
+                  orderNumber: rawOrderNumber,
+                  kisNumber: rawKisNumber || '',
+                  exportDate,
+                  shipmentDate,
+                  status: rawStatus,
+                  packagesPlanned,
+                  packagesActual,
+                  linesPlanned,
+                  linesActual,
+                  counterparty: rawCounterparty || 'Не указан',
+                  acceptanceDate,
+                }
+              })
+              // Обрабатываем обновления батчами по 1000
+              if (updateBatch.length >= 1000) {
+                await processBatches()
+              }
+            } else {
+              if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
+                console.log(`[DEBUG] НЕ найдена в БД! Будет создана новая запись с КИС="${rawKisNumber}"`)
+                console.log(`[DEBUG] Параметры поиска: branch="${rawBranch}", orderType="${rawOrderType}", orderNumber="${rawOrderNumber}", clientTIN="${clientTIN}"`)
+              }
+              createBatch.push({
+                branch: rawBranch,
+                orderType: rawOrderType,
+                orderNumber: rawOrderNumber,
+                kisNumber: rawKisNumber || '',
+                exportDate,
+                shipmentDate,
+                status: rawStatus,
+                packagesPlanned,
+                packagesActual,
+                linesPlanned,
+                linesActual,
+                counterparty: rawCounterparty || 'Не указан',
+                acceptanceDate,
+                clientTIN,
+              })
+              if (createBatch.length >= BATCH_SIZE) await processBatches()
+            }
           }
 
           if (rowNumber % 1000 === 0) {
