@@ -634,29 +634,34 @@ export class FinanceService {
     })
 
     // Группируем по статусам
-    const statusMap = new Map<string, { amount: number; count: number }>()
+    // Используем нормализованный статус как ключ, но сохраняем оригинальное значение для отображения
+    const statusMap = new Map<string, { amount: number; count: number; originalStatus: string }>()
 
     finances.forEach(finance => {
-      const status = finance.status || 'Без статуса'
+      // Нормализуем статус: убираем пробелы и приводим к нижнему регистру для устранения дублей
+      const originalStatus = finance.status ? finance.status.trim() : 'Без статуса'
+      const normalizedStatus = originalStatus.toLowerCase()
       const amount = Number(finance.amount) || 0
 
-      if (statusMap.has(status)) {
-        const existing = statusMap.get(status)!
-        statusMap.set(status, {
+      if (statusMap.has(normalizedStatus)) {
+        const existing = statusMap.get(normalizedStatus)!
+        statusMap.set(normalizedStatus, {
           amount: existing.amount + amount,
           count: existing.count + 1,
+          originalStatus: existing.originalStatus, // Сохраняем первый встреченный вариант
         })
       } else {
-        statusMap.set(status, {
+        statusMap.set(normalizedStatus, {
           amount,
           count: 1,
+          originalStatus, // Сохраняем оригинальное значение для отображения
         })
       }
     })
 
-    // Преобразуем в массив
-    const stats = Array.from(statusMap.entries()).map(([status, data]) => ({
-      status,
+    // Преобразуем в массив, используя оригинальное значение статуса
+    const stats = Array.from(statusMap.entries()).map(([_, data]) => ({
+      status: data.originalStatus,
       amount: data.amount,
       count: data.count,
     }))

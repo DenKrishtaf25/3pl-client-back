@@ -27,6 +27,40 @@ function cleanValue(value: string): string {
   return value.trim().replace(/;+$/, '')
 }
 
+// Функция для нормализации статуса: убирает пробелы и приводит к единому регистру
+function normalizeStatus(status: string): string {
+  if (!status) return ''
+  // Убираем пробелы в начале и конце, а также множественные пробелы
+  let normalized = status.trim().replace(/\s+/g, ' ')
+  if (!normalized) return ''
+  
+  // Приводим к нижнему регистру для единообразия
+  normalized = normalized.toLowerCase()
+  
+  // Затем делаем первую букву каждого слова заглавной
+  // Обрабатываем слова разделенные пробелами и "/"
+  return normalized
+    .split(/(\s+|\/)/)
+    .map(segment => {
+      // Сохраняем разделители как есть
+      if (segment.match(/^\s*$|\//)) return segment
+      
+      // Если слово начинается с цифры (например, "3pl"), оставляем как есть
+      if (/^\d/.test(segment)) {
+        return segment
+      }
+      
+      // Для обычных слов: первая буква заглавная, остальные строчные
+      if (segment.length > 0) {
+        return segment.charAt(0).toUpperCase() + segment.slice(1)
+      }
+      return segment
+    })
+    .join('')
+    .replace(/\s+/g, ' ') // Убираем множественные пробелы
+    .trim()
+}
+
 // Функция для парсинга даты (поддерживает DD.MM.YYYY HH:mm, DD.MM.YYYY и YYYY-MM-DD)
 function parseDate(dateStr: string): Date | null {
   if (!dateStr || !dateStr.trim()) return null
@@ -268,6 +302,8 @@ async function main() {
           const rawOrderNumber = record.КодПретензии ? cleanValue(String(record.КодПретензии)) : ''
           const rawAmount = record.СуммаПретензии ? String(record.СуммаПретензии) : '0'
           const rawStatus = record.Статус ? cleanValue(String(record.Статус)) : ''
+          // Нормализуем статус для единообразия в БД
+          const normalizedStatus = normalizeStatus(rawStatus)
           const rawComment = record.Комменатарий ? cleanValue(String(record.Комменатарий)) : null
           
           let rawCompletionDate: string | null = null
@@ -287,7 +323,7 @@ async function main() {
             }
           }
 
-          if (!rawBranch || !rawClientTIN || !rawOrderNumber || !rawStatus) {
+          if (!rawBranch || !rawClientTIN || !rawOrderNumber || !normalizedStatus) {
             skippedRecords.push({ row: rowNumber, reason: 'Отсутствуют обязательные поля' })
             skipped++
             return callback()
@@ -345,7 +381,7 @@ async function main() {
                 date,
                 orderNumber: rawOrderNumber,
                 amount,
-                status: rawStatus,
+                status: normalizedStatus,
                 comment: rawComment,
                 completionDate,
                 closingDate,
@@ -366,7 +402,7 @@ async function main() {
                   date,
                   orderNumber: rawOrderNumber,
                   amount,
-                  status: rawStatus,
+                  status: normalizedStatus,
                   comment: rawComment,
                   completionDate,
                   closingDate,
@@ -380,7 +416,7 @@ async function main() {
                 date,
                 orderNumber: rawOrderNumber,
                 amount,
-                status: rawStatus,
+                status: normalizedStatus,
                 comment: rawComment,
                 completionDate,
                 closingDate,
