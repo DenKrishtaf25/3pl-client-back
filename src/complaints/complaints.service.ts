@@ -16,6 +16,12 @@ export class ComplaintsService {
     return user?.clients?.map(client => client.TIN) || []
   }
 
+  private normalizeComplaintType(type: string): string {
+    if (!type) return 'Без типа'
+    // Убираем пробелы в начале и конце, удаляем знаки вопроса и другие знаки препинания в конце
+    return type.trim().replace(/[?\s]+$/, '').trim() || 'Без типа'
+  }
+
   async findAll(userId: string, userRole: string, clientTINFilter?: string) {
     // Получаем список клиентов пользователя
     const userClientTINs = await this.getUserClientTINs(userId)
@@ -210,7 +216,12 @@ export class ComplaintsService {
     if (dto.complaintType) {
       const complaintTypeTerm = dto.complaintType.trim()
       if (complaintTypeTerm) {
-        where.complaintType = { contains: complaintTypeTerm, mode: 'insensitive' }
+        // Нормализуем поисковый запрос (убираем лишние символы в конце)
+        const normalizedTerm = this.normalizeComplaintType(complaintTypeTerm)
+        
+        // Используем contains для поиска нормализованного значения
+        // Это найдет и "Прочее", и "Прочее ?", и "Прочее??" так как все они содержат "Прочее"
+        where.complaintType = { contains: normalizedTerm, mode: 'insensitive' }
       }
     }
 
@@ -657,6 +668,55 @@ export class ComplaintsService {
       count: data.count,
       confirmedCount: data.confirmedCount,
       unconfirmedCount: data.unconfirmedCount,
+    }))
+
+    return stats
+  }
+
+  async getTypeStats(userId: string, userRole: string) {
+    // Получаем список клиентов пользователя
+    const userClientTINs = await this.getUserClientTINs(userId)
+
+    // Определяем финальный список TIN для фильтрации
+    let allowedTINs: string[] = []
+
+    if (userRole === 'ADMIN') {
+      // Админ может видеть все Complaints
+      allowedTINs = [] // Пустой массив = все клиенты
+    } else {
+      // Обычный пользователь
+      if (userClientTINs.length === 0) {
+        return []
+      }
+      allowedTINs = userClientTINs
+    }
+
+    // Формируем условие для фильтрации по клиентам
+    const where: Prisma.ComplaintWhereInput = {}
+    if (allowedTINs.length > 0) {
+      where.clientTIN = { in: allowedTINs }
+    }
+
+    // Получаем все записи Complaints с нужными полями
+    const complaints = await this.prisma.complaint.findMany({
+      where,
+      select: {
+        complaintType: true,
+      }
+    })
+
+    // Группируем по типам претензий (с нормализацией)
+    const typeMap = new Map<string, number>()
+
+    complaints.forEach(complaint => {
+      const normalizedType = this.normalizeComplaintType(complaint.complaintType)
+      typeMap.set(normalizedType, (typeMap.get(normalizedType) || 0) + 1)
+    })
+
+    // Преобразуем в массив
+    const stats = Array.from(typeMap.entries()).map(([type, count]) => ({
+      type,
+      count,
     }))
 
     return stats
