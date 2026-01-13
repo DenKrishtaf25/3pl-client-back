@@ -51,6 +51,7 @@ export class AdminUsersController {
 
   @Post()
   @Roles('ADMIN')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async create(@Body() dto: UserDto) {
     return this.userService.create(dto)
   }
