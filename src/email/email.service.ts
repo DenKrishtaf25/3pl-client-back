@@ -105,5 +105,106 @@ export class EmailService {
 			throw error
 		}
 	}
+
+	async sendComplaintEmail(subject: string, data: Record<string, any>): Promise<void> {
+		const smtpUser = this.configService.get<string>('SMTP_USER')
+		const smtpFrom = this.configService.get<string>('SMTP_FROM', smtpUser)
+		const recipientEmail = 'claims-3pl@pecom.ru'
+		
+		this.logger.log(`Sending complaint email to ${recipientEmail}`)
+		this.logger.log(`From: ${smtpFrom}`)
+		this.logger.log(`Subject: ${subject}`)
+		
+		if (!smtpUser) {
+			const error = 'SMTP_USER is not configured in environment variables'
+			this.logger.error(error)
+			throw new Error(error)
+		}
+
+		// Маппинг названий полей на русский язык
+		const fieldTranslations: Record<string, string> = {
+			firstName: 'Имя',
+			first_name: 'Имя',
+			lastName: 'Фамилия',
+			last_name: 'Фамилия',
+			email: 'Email',
+			phone: 'Телефон',
+			position: 'Должность',
+			description: 'Описание',
+			complaintNumber: 'Номер претензии',
+			complaint_number: 'Номер претензии',
+			client: 'Клиент',
+			branch: 'Филиал',
+			creationDate: 'Дата создания',
+			creation_date: 'Дата создания',
+			complaintType: 'Тип претензии',
+			complaint_type: 'Тип претензии',
+			status: 'Статус',
+			confirmation: 'Подтверждение',
+			deadline: 'Крайний срок',
+			completionDate: 'Дата завершения',
+			completion_date: 'Дата завершения',
+			clientTIN: 'ИНН клиента',
+			client_tin: 'ИНН клиента',
+		}
+
+		// Формируем HTML таблицу с данными претензии
+		const dataRows = Object.entries(data)
+			.map(([key, value]) => {
+				// Используем перевод из маппинга или форматируем ключ
+				const formattedKey = fieldTranslations[key] || 
+					fieldTranslations[key.toLowerCase()] ||
+					key
+						.replace(/([A-Z])/g, ' $1')
+						.replace(/^./, str => str.toUpperCase())
+						.replace(/_/g, ' ')
+						.trim()
+				const formattedValue = value !== null && value !== undefined ? String(value) : '-'
+				return `
+					<tr style="border-bottom: 1px solid #ddd;">
+						<td style="padding: 10px; font-weight: bold; width: 200px; vertical-align: top;">${formattedKey}:</td>
+						<td style="padding: 10px; vertical-align: top;">${formattedValue}</td>
+					</tr>
+				`
+			})
+			.join('')
+
+		const mailOptions = {
+			from: smtpFrom,
+			to: recipientEmail,
+			subject: subject,
+			text: `Претензия\n\n${Object.entries(data)
+				.map(([key, value]) => {
+					const translatedKey = fieldTranslations[key] || 
+						fieldTranslations[key.toLowerCase()] || 
+						key
+							.replace(/([A-Z])/g, ' $1')
+							.replace(/^./, str => str.toUpperCase())
+							.replace(/_/g, ' ')
+							.trim()
+					return `${translatedKey}: ${value !== null && value !== undefined ? value : '-'}`
+				})
+				.join('\n')}`,
+			html: `
+				<div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
+					<h2 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">Претензия</h2>
+					<table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+						<tbody>
+							${dataRows}
+						</tbody>
+					</table>
+					<p style="margin-top: 30px; color: #666; font-size: 12px;">Это письмо было отправлено автоматически из системы ПЭК 3PL.</p>
+				</div>
+			`,
+		}
+
+		try {
+			await this.transporter.sendMail(mailOptions)
+			this.logger.log(`Complaint email sent successfully to ${recipientEmail}`)
+		} catch (error) {
+			this.logger.error(`Failed to send complaint email to ${recipientEmail}:`, error)
+			throw error
+		}
+	}
 }
 

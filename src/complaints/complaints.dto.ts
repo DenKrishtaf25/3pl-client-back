@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsDateString, IsInt, Min, Max, IsEnum, IsBoolean } from 'class-validator'
+import { IsString, IsOptional, IsDateString, IsInt, Min, Max, IsEnum, IsBoolean, IsEmail, IsObject } from 'class-validator'
 import { Type } from 'class-transformer'
 
 export class ComplaintDto {
@@ -162,5 +162,13 @@ export class FindComplaintDto {
 
 export class ComplaintStatusStatsDto {
   // Пустой DTO - сортировка и фильтры не нужны
+}
+
+export class SendComplaintEmailDto {
+  @IsString()
+  subject: string
+
+  @IsObject()
+  data: Record<string, any>
 }
 

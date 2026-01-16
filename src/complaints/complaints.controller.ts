@@ -1,15 +1,19 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, UsePipes, ValidationPipe, Query } from '@nestjs/common'
+import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, UsePipes, ValidationPipe, Query, HttpCode } from '@nestjs/common'
 import { ComplaintsService } from './complaints.service'
-import { ComplaintDto, UpdateComplaintDto, FindComplaintDto } from './complaints.dto'
+import { ComplaintDto, UpdateComplaintDto, FindComplaintDto, SendComplaintEmailDto } from './complaints.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { Roles } from '../auth/decorators/roles.decorator'
 import { CurrentUser } from '../auth/decorators/user.decorator'
 import { Auth } from '../auth/decorators/auth.decorator'
+import { EmailService } from '../email/email.service'
 
 @Controller('complaints')
 export class UserComplaintsController {
-  constructor(private readonly complaintsService: ComplaintsService) {}
+  constructor(
+    private readonly complaintsService: ComplaintsService,
+    private readonly emailService: EmailService
+  ) {}
 
   @Get()
   @Auth()
@@ -61,6 +65,15 @@ export class UserComplaintsController {
     @CurrentUser('role') userRole: string
   ) {
     return this.complaintsService.getTypeStats(userId, userRole)
+  }
+
+  @Post('send-email')
+  @Auth()
+  @HttpCode(200)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async sendEmail(@Body() dto: SendComplaintEmailDto) {
+    await this.emailService.sendComplaintEmail(dto.subject, dto.data)
+    return { success: true, message: 'Email sent successfully' }
   }
 
   @Get(':id')
