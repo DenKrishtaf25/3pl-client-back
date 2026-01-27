@@ -1,5 +1,6 @@
 import { IsString, IsOptional, IsDateString, IsInt, Min, Max, IsEnum, IsBoolean, IsEmail, IsObject } from 'class-validator'
 import { Type } from 'class-transformer'
+import { Transform } from 'class-transformer'
 
 export class ComplaintDto {
   @IsString()
@@ -170,5 +171,37 @@ export class SendComplaintEmailDto {
 
   @IsObject()
   data: Record<string, any>
+}
+
+export class SendComplaintEmailMultipartDto {
+  @IsEmail()
+  to: string
+
+  @IsString()
+  subject: string
+
+  @IsString()
+  @IsOptional()
+  firstName?: string
+
+  @IsString()
+  @IsOptional()
+  lastName?: string
+
+  @IsEmail()
+  @IsOptional()
+  email?: string
+
+  @IsString()
+  @IsOptional()
+  phone?: string
+
+  @IsString()
+  @IsOptional()
+  position?: string
+
+  @IsString()
+  @IsOptional()
+  description?: string
 }
 

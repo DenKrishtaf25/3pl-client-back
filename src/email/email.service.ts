@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as nodemailer from 'nodemailer'
+import * as fs from 'fs'
+import * as path from 'path'
 
 @Injectable()
 export class EmailService {
@@ -106,14 +108,22 @@ export class EmailService {
 		}
 	}
 
-	async sendComplaintEmail(subject: string, data: Record<string, any>): Promise<void> {
+	async sendComplaintEmail(
+		subject: string, 
+		data: Record<string, any>, 
+		to?: string, 
+		filePath?: string
+	): Promise<void> {
 		const smtpUser = this.configService.get<string>('SMTP_USER')
 		const smtpFrom = this.configService.get<string>('SMTP_FROM', smtpUser)
-		const recipientEmail = 'claims-3pl@pecom.ru'
+		const recipientEmail = to || 'claims-3pl@pecom.ru'
 		
 		this.logger.log(`Sending complaint email to ${recipientEmail}`)
 		this.logger.log(`From: ${smtpFrom}`)
 		this.logger.log(`Subject: ${subject}`)
+		if (filePath) {
+			this.logger.log(`Attachment: ${filePath}`)
+		}
 		
 		if (!smtpUser) {
 			const error = 'SMTP_USER is not configured in environment variables'
@@ -169,7 +179,7 @@ export class EmailService {
 			})
 			.join('')
 
-		const mailOptions = {
+		const mailOptions: any = {
 			from: smtpFrom,
 			to: recipientEmail,
 			subject: subject,
@@ -196,6 +206,21 @@ export class EmailService {
 					<p style="margin-top: 30px; color: #666; font-size: 12px;">Это письмо было отправлено автоматически из системы ПЭК 3PL.</p>
 				</div>
 			`,
+		}
+
+		// Добавляем вложение, если есть файл
+		if (filePath) {
+			if (fs.existsSync(filePath)) {
+				const fileName = path.basename(filePath)
+				mailOptions.attachments = [
+					{
+						path: filePath,
+						filename: fileName,
+					},
+				]
+			} else {
+				this.logger.warn(`File not found: ${filePath}`)
+			}
 		}
 
 		try {
