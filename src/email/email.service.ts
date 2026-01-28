@@ -68,7 +68,7 @@ export class EmailService {
 		const mailOptions = {
 			from: smtpFrom,
 			to: email,
-			subject: 'Регистрация в системе ПЭК 3PL',
+			subject: 'Регистрация в личном кабинете ПЭК 3PL',
 			text: `Здравствуйте!
 
 Ваш аккаунт в системе ПЭК 3PL был успешно создан.
@@ -86,7 +86,7 @@ export class EmailService {
 			html: `
 				<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
 					<h2 style="color: #333;">Здравствуйте!</h2>
-					<p>Ваш аккаунт в системе ПЭК 3PL был успешно создан.</p>
+					<p>Ваш аккаунт в личном кабинете ПЭК 3PL был успешно создан.</p>
 					<div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
 						<p style="margin: 5px 0;"><strong>Ваши учетные данные для входа:</strong></p>
 						<p style="margin: 5px 0;">Логин: <strong>${email}</strong></p>
