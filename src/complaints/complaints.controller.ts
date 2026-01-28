@@ -134,7 +134,8 @@ export class UserComplaintsController {
           dto.subject,
           data,
           dto.to,
-          filePath
+          filePath,
+          file?.originalname // Передаем оригинальное имя файла
         )
         // Удаляем файл после успешной отправки
         if (filePath && fs.existsSync(filePath)) {

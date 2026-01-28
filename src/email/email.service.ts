@@ -112,7 +112,8 @@ export class EmailService {
 		subject: string, 
 		data: Record<string, any>, 
 		to?: string, 
-		filePath?: string
+		filePath?: string,
+		originalFileName?: string
 	): Promise<void> {
 		const smtpUser = this.configService.get<string>('SMTP_USER')
 		const smtpFrom = this.configService.get<string>('SMTP_FROM', smtpUser)
@@ -211,7 +212,8 @@ export class EmailService {
 		// Добавляем вложение, если есть файл
 		if (filePath) {
 			if (fs.existsSync(filePath)) {
-				const fileName = path.basename(filePath)
+				// Используем оригинальное имя файла, если оно передано, иначе берем из пути
+				const fileName = originalFileName || path.basename(filePath)
 				mailOptions.attachments = [
 					{
 						path: filePath,
