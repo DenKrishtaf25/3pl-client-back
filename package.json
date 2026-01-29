@@ -26,6 +26,8 @@
         "import:registry:prod": "node dist/prisma/import-registry.js",
         "import:orders": "ts-node prisma/import-orders.ts",
         "import:orders:prod": "node dist/prisma/import-orders.js",
+        "import:orders-online": "ts-node prisma/import-orders-online.ts",
+        "import:orders-online:prod": "node dist/prisma/import-orders-online.js",
         "import:analytics": "ts-node prisma/import-analytics.ts",
         "import:analytics:prod": "node dist/prisma/import-analytics.js",
         "import:analytic-orders": "ts-node prisma/import-analytic-orders.ts",

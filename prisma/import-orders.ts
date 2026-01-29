@@ -79,58 +79,44 @@ function parseInteger(value: string): number {
 
 const orderKey = (b: string, ot: string, on: string, t: string) => `${b}|${ot}|${on}|${t}`
 
-async function main() {
-  try {
-    // Проверяем, нужно ли фильтровать по последним 3 месяцам
-    const filterLast3Months = process.env.IMPORT_LAST_3_MONTHS === 'true'
-    const dateThreshold = filterLast3Months ? new Date() : null
-    if (dateThreshold) {
-      dateThreshold.setMonth(dateThreshold.getMonth() - 3)
-      console.log(`Режим фильтрации: импорт только данных за последние 3 месяца (с ${dateThreshold.toLocaleDateString()})`)
-    } else {
-      console.log('Режим: полный импорт всех данных')
-    }
+async function processCsvFile(csvFilePath: string, fileName: string, clearBeforeImport: boolean = false) {
+  console.log(`\n=== Обработка файла: ${fileName} ===`)
+  
+  let imported = 0
+  let updated = 0
+  let skipped = 0
+  let errors = 0
+  let rowNumber = 1
+  const csvSeenKeys = new Set<string>() // Для отслеживания дубликатов в CSV
+  const startTime = Date.now()
 
-    const csvFilePath = join(process.cwd(), 'table_data', 'orders.csv')
-    console.log('Начинаем потоковый импорт orders...')
+  const BATCH_SIZE = 2000 // Увеличенный размер батча для максимальной скорости
+  const createBatch: Array<any> = []
+  const updateBatch: Array<{ id: string; data: any }> = []
 
-    const allClients = await prisma.client.findMany({ select: { TIN: true } })
-    const clientTINsSet = new Set(allClients.map(c => c.TIN))
-    console.log(`Загружено ${clientTINsSet.size} клиентов`)
+  // Загружаем список клиентов для проверки foreign key constraint
+  console.log('Загружаем список клиентов для проверки...')
+  const allClients = await prisma.client.findMany({ select: { TIN: true } })
+  const clientTINsSet = new Set(allClients.map(c => c.TIN))
+  console.log(`Загружено ${clientTINsSet.size} клиентов для проверки`)
 
-    const existingOrdersMap = new Map<string, { id: string }>()
+  // Загружаем все существующие записи в память для быстрого поиска (только если не делаем полную очистку)
+  const existingOrdersMap = new Map<string, { id: string }>()
+  
+  if (!clearBeforeImport) {
+    console.log('Загружаем все существующие записи orders в память...')
     let skip = 0
-    const batchSize = 2000
-    
-    // Загружаем существующие записи: при фильтрации - только последние 3 месяца, иначе - все
-    const whereClause: any = filterLast3Months && dateThreshold
-      ? {
-          OR: [
-            { exportDate: { gte: dateThreshold } },
-            { shipmentDate: { gte: dateThreshold } },
-            { acceptanceDate: { gte: dateThreshold } },
-          ]
-        }
-      : {} // Полный импорт - загружаем все записи
-    
-    if (filterLast3Months && dateThreshold) {
-      console.log(`Загружаем существующие записи orders (только последние 3 месяца с ${dateThreshold.toLocaleDateString()})...`)
-    } else {
-      console.log(`Загружаем все существующие записи orders (полный импорт)...`)
-    }
+    const loadBatchSize = 5000
     
     while (true) {
-
       const batch = await prisma.order.findMany({
-        where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
         select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true },
         skip,
-        take: batchSize,
+        take: loadBatchSize,
       })
       if (batch.length === 0) break
       
       batch.forEach(order => {
-        // Нормализуем данные так же, как при обработке CSV (trim)
         const normalizedBranch = order.branch.trim()
         const normalizedOrderType = order.orderType.trim()
         const normalizedOrderNumber = order.orderNumber.trim()
@@ -139,495 +125,322 @@ async function main() {
         existingOrdersMap.set(key, { id: order.id })
       })
       
-      skip += batchSize
+      skip += loadBatchSize
+      if (batch.length < loadBatchSize) break
       
-      if (batch.length < batchSize) break
-      
-      // Задержка для освобождения памяти между батчами
       await new Promise(resolve => setImmediate(resolve))
     }
     
-    if (filterLast3Months && dateThreshold) {
-      console.log(`Загружено ${existingOrdersMap.size} существующих записей orders (только последние 3 месяца)`)
-    } else {
-      console.log(`Загружено ${existingOrdersMap.size} существующих записей orders (полный импорт)`)
-    }
+    console.log(`Загружено ${existingOrdersMap.size} существующих записей orders в память`)
+  } else {
+    console.log('Таблица очищена, импортируем только новые записи (без проверки существующих)')
+  }
 
-    let imported = 0
-    let updated = 0
-    let skipped = 0
-    let errors = 0
-    let rowNumber = 1
-    const skippedRecords: Array<{ row: number; reason: string }> = []
-    const csvOrderKeys = new Set<string>()
-    const csvSeenKeys = new Set<string>() // Для отслеживания дубликатов в CSV
-    const startTime = Date.now()
-
-    const BATCH_SIZE = 100
-    const createBatch: Array<any> = []
-    const updateBatch: Array<{ id: string; data: any }> = []
-
-    async function processBatches() {
-      if (createBatch.length > 0) {
-        const batchSize = createBatch.length
-        const startTime = Date.now()
-        
-        // Фильтруем записи, которые уже есть в памяти
-        const recordsToCheck = createBatch.filter(record => {
-          const key = orderKey(record.branch, record.orderType, record.orderNumber, record.clientTIN)
-          return !existingOrdersMap.has(key)
-        })
-        
-        // Проверяем батчами в БД, какие записи уже существуют
-        const recordsToCreate: any[] = []
-        if (recordsToCheck.length > 0) {
-          // Группируем по 50 записей для проверки
-          const checkBatchSize = 50
-          for (let i = 0; i < recordsToCheck.length; i += checkBatchSize) {
-            const batch = recordsToCheck.slice(i, i + checkBatchSize)
-            const existingInDb = await prisma.order.findMany({
-              where: {
-                OR: batch.map(record => ({
-                  branch: record.branch,
-                  orderType: record.orderType,
-                  orderNumber: record.orderNumber,
-                  clientTIN: record.clientTIN,
-                }))
-              },
-              select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true }
-            })
-            
-            // Создаем Set существующих ключей (с нормализацией через trim)
-            const existingKeys = new Set(
-              existingInDb.map(order => {
-                const normalizedBranch = order.branch.trim()
-                const normalizedOrderType = order.orderType.trim()
-                const normalizedOrderNumber = order.orderNumber.trim()
-                const normalizedClientTIN = order.clientTIN.trim()
-                return orderKey(normalizedBranch, normalizedOrderType, normalizedOrderNumber, normalizedClientTIN)
-              })
-            )
-            
-            // Создаем Map для быстрого поиска ID (с нормализацией через trim)
-            const existingMap = new Map(
-              existingInDb.map(order => {
-                const normalizedBranch = order.branch.trim()
-                const normalizedOrderType = order.orderType.trim()
-                const normalizedOrderNumber = order.orderNumber.trim()
-                const normalizedClientTIN = order.clientTIN.trim()
-                return [
-                  orderKey(normalizedBranch, normalizedOrderType, normalizedOrderNumber, normalizedClientTIN),
-                  order.id
-                ]
-              })
-            )
-            
-            // Разделяем на создание и обновление
-            for (const record of batch) {
-              const key = orderKey(record.branch, record.orderType, record.orderNumber, record.clientTIN)
-              if (existingKeys.has(key)) {
-                // Запись существует, добавляем в updateBatch
-                const existingId = existingMap.get(key)!
-                updateBatch.push({
-                  id: existingId,
-                  data: {
-                    branch: record.branch,
-                    orderType: record.orderType,
-                    orderNumber: record.orderNumber,
-                    kisNumber: record.kisNumber,
-                    exportDate: record.exportDate,
-                    shipmentDate: record.shipmentDate,
-                    status: record.status,
-                    packagesPlanned: record.packagesPlanned,
-                    packagesActual: record.packagesActual,
-                    linesPlanned: record.linesPlanned,
-                    linesActual: record.linesActual,
-                    counterparty: record.counterparty,
-                    acceptanceDate: record.acceptanceDate,
-                  }
-                })
-                // Добавляем в память
-                existingOrdersMap.set(key, { id: existingId })
+  async function processBatches() {
+    if (createBatch.length > 0) {
+      // Убрали skipDuplicates для максимальной скорости - полагаемся на уникальные индексы БД
+      const batchStartTime = Date.now()
+      const batchSize = createBatch.length
+      try {
+        await prisma.order.createMany({ data: createBatch })
+        imported += createBatch.length
+        const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(2)
+        if (batchSize >= 500) {
+          console.log(`[processBatches] Создано ${batchSize} записей за ${batchDuration} сек`)
+        }
+      } catch (error: any) {
+        // Обрабатываем различные типы ошибок
+        if (error.code === 'P2002' || error.message?.includes('Unique constraint')) {
+          // Дубликаты - пропускаем батч, так как записи уже существуют
+          skipped += batchSize
+          const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(2)
+          if (batchSize >= 500) {
+            console.log(`[processBatches] Пропущено ${batchSize} дубликатов за ${batchDuration} сек`)
+          }
+        } else if (error.code === 'P2003' || error.message?.includes('Foreign key constraint')) {
+          // Foreign key constraint - клиент не найден (хотя мы проверяли, но могли быть изменения)
+          // Пробуем вставить по одной записи, пропуская проблемные
+          const batchCopy = [...createBatch] // Сохраняем копию перед очисткой
+          let successCount = 0
+          let failCount = 0
+          for (const record of batchCopy) {
+            try {
+              await prisma.order.create({ data: record })
+              successCount++
+              imported++
+            } catch (innerError: any) {
+              if (innerError.code === 'P2003' || innerError.message?.includes('Foreign key constraint')) {
+                skipped++
+                failCount++
               } else {
-                // Запись новая, добавляем в createBatch
-                recordsToCreate.push(record)
-                // Добавляем в память с временным ID
-                existingOrdersMap.set(key, { id: '' })
+                errors++
+                failCount++
               }
             }
           }
-        }
-        
-        if (recordsToCreate.length > 0) {
-          await prisma.order.createMany({ data: recordsToCreate, skipDuplicates: true })
-          imported += recordsToCreate.length
-        }
-        
-        const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-        createBatch.length = 0
-        if (batchSize >= 100) {
-          console.log(`[processBatches] Создано ${recordsToCreate.length}/${batchSize} записей за ${duration} сек (${batchSize - recordsToCreate.length} были дубликатами)`)
+          if (batchSize >= 500 && failCount > 0) {
+            const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(2)
+            console.log(`[processBatches] Создано ${successCount}/${batchSize} записей, пропущено ${failCount} (foreign key) за ${batchDuration} сек`)
+          }
+        } else {
+          // Другая ошибка - логируем
+          console.error(`Ошибка при создании батча из ${batchSize} записей: ${error.message}`)
+          errors += batchSize
         }
       }
+      createBatch.length = 0
+    }
 
-      if (updateBatch.length > 0) {
-        console.log(`[processBatches] Обновляем ${updateBatch.length} записей...`)
-        const startTime = Date.now()
-        const updateConcurrency = 50 // Обновляем по 50 параллельно
-        let updateCount = 0
-        
-        for (let i = 0; i < updateBatch.length; i += updateConcurrency) {
-          const batch = updateBatch.slice(i, i + updateConcurrency)
-          await Promise.all(
-            batch.map(async (update) => {
-              try {
-                // Логируем обновления с нужным КИС номером
-                if (update.data.kisNumber && (update.data.kisNumber.includes('ЮБА0502021_20230502') || update.data.kisNumber.includes('ЮБА0502021_2023050244'))) {
-                  console.log(`[DEBUG UPDATE] Обновляем ID=${update.id} с КИС=${update.data.kisNumber}`)
-                  const before = await prisma.order.findUnique({ where: { id: update.id }, select: { kisNumber: true } })
-                  console.log(`[DEBUG UPDATE] До обновления КИС=${before?.kisNumber}`)
-                }
-                await prisma.order.update({ where: { id: update.id }, data: update.data })
-                if (update.data.kisNumber && (update.data.kisNumber.includes('ЮБА0502021_20230502') || update.data.kisNumber.includes('ЮБА0502021_2023050244'))) {
-                  const after = await prisma.order.findUnique({ where: { id: update.id }, select: { kisNumber: true } })
-                  console.log(`[DEBUG UPDATE] После обновления КИС=${after?.kisNumber}`)
-                }
-                updated++
-                updateCount++
-              } catch (error) {
-                errors++
-                if (update.data.kisNumber && (update.data.kisNumber.includes('ЮБА0502021_20230502') || update.data.kisNumber.includes('ЮБА0502021_2023050244'))) {
-                  console.error(`[DEBUG ERROR] Ошибка при обновлении ID=${update.id}:`, error)
-                }
-              }
-            })
-          )
-          
-          if (updateCount % 200 === 0 || updateCount === updateBatch.length) {
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-            console.log(`[processBatches] Обновлено ${updateCount}/${updateBatch.length} за ${elapsed} сек...`)
-          }
-        }
-        const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-        console.log(`[processBatches] Обновлено ${updateCount} записей за ${duration} сек`)
+    if (updateBatch.length > 0) {
+      // Быстрое обновление батчами по 100
+      const updateConcurrency = 100
+      for (let i = 0; i < updateBatch.length; i += updateConcurrency) {
+        const batch = updateBatch.slice(i, i + updateConcurrency)
+        await Promise.all(
+          batch.map(async (update) => {
+            try {
+              await prisma.order.update({ where: { id: update.id }, data: update.data })
+              updated++
+            } catch (error) {
+              errors++
+            }
+          })
+        )
       }
       updateBatch.length = 0
     }
+  }
 
-    const readStream = createReadStream(csvFilePath)
-    console.log('Используем кодировку UTF-8 для декодирования')
+  const readStream = createReadStream(csvFilePath)
+  console.log('Используем кодировку UTF-8 для декодирования')
 
-    // Создаем Transform stream для декодирования UTF-8
-    let isFirstChunk = true
-    const decodeStream = new Transform({
-      transform(chunk: Buffer, encoding, callback) {
-        try {
-          // Удаляем BOM из первого чанка если он есть
-          if (isFirstChunk) {
-            isFirstChunk = false
-            if (chunk[0] === 0xEF && chunk[1] === 0xBB && chunk[2] === 0xBF) {
-              chunk = chunk.slice(3)
-              console.log('Обнаружен UTF-8 BOM, удаляем...')
-            }
+  // Создаем Transform stream для декодирования UTF-8
+  let isFirstChunk = true
+  const decodeStream = new Transform({
+    transform(chunk: Buffer, encoding, callback) {
+      try {
+        // Удаляем BOM из первого чанка если он есть
+        if (isFirstChunk) {
+          isFirstChunk = false
+          if (chunk[0] === 0xEF && chunk[1] === 0xBB && chunk[2] === 0xBF) {
+            chunk = chunk.slice(3)
+            console.log('Обнаружен UTF-8 BOM, удаляем...')
           }
-          const decoded = chunk.toString('utf-8')
-          this.push(decoded)
-          callback()
-        } catch (error) {
-          callback(error as Error)
         }
-      }
-    })
-
-    // Парсер CSV - важно: columns должен быть true для использования первой строки как заголовков
-    const parser = parse({
-      delimiter: ';',
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-      relax_column_count: true,
-      bom: true, // Автоматически удаляет BOM
-    })
-
-    // Трансформ для обработки записей
-    let isFirstDataRecord = true
-    const processStream = new Transform({
-      objectMode: true,
-      async transform(record: OrderCsvRow, encoding, callback) {
-        rowNumber++
-        
-        try {
-          // Отладка первой записи данных
-          if (isFirstDataRecord) {
-            isFirstDataRecord = false
-            console.log('Первая запись данных:', JSON.stringify(record, null, 2))
-            console.log('Ключи записи:', Object.keys(record))
-          }
-          
-          const rawBranch = record.Филиал ? cleanValue(String(record.Филиал)).trim() : ''
-          const rawOrderType = record['Тип заказа'] ? cleanValue(String(record['Тип заказа'])).trim() : ''
-          const rawOrderNumber = record['Номер заказа'] ? cleanValue(String(record['Номер заказа'])).trim() : ''
-          const rawKisNumber = record['Номер заказа КИС'] ? cleanValue(String(record['Номер заказа КИС'])).trim() : ''
-          
-          // Логируем записи с нужным КИС номером для отладки
-          if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
-            console.log(`\n[DEBUG] Найдена запись с КИС: ${rawKisNumber}`)
-            console.log(`  Строка: ${rowNumber}`)
-            console.log(`  Филиал: ${rawBranch}, Тип: ${rawOrderType}, Номер: ${rawOrderNumber}`)
-            console.log(`  ИНН: ${record.ИНН}`)
-          }
-          const rawExportDate = record['Дата выгрузки заказа'] ? String(record['Дата выгрузки заказа']) : ''
-          const rawShipmentDate = record['Плановая дата отгрузки'] ? String(record['Плановая дата отгрузки']) : ''
-          const rawStatus = record.Статус ? cleanValue(String(record.Статус)) : ''
-          const rawPackagesPlanned = record.КоличествоУпаковокПлан ? String(record.КоличествоУпаковокПлан) : '0'
-          const rawPackagesActual = record.КоличествоУпаковокФакт ? String(record.КоличествоУпаковокФакт) : '0'
-          const rawLinesPlanned = record.КоличествоСтрокПлан ? String(record.КоличествоСтрокПлан) : '0'
-          const rawLinesActual = record.КоличествоСтрокФакт ? String(record.КоличествоСтрокФакт) : '0'
-          const rawCounterparty = record.Контрагент ? cleanValue(String(record.Контрагент)) : ''
-          const rawAcceptanceDate = record['Дата приемки/отгрузки'] ? String(record['Дата приемки/отгрузки']) : ''
-          const rawClientTIN = record.ИНН ? cleanValue(String(record.ИНН)) : ''
-
-          if (!rawBranch || !rawClientTIN || !rawOrderType || !rawOrderNumber || !rawStatus) {
-            if (rowNumber <= 5) {
-              console.log(`Строка ${rowNumber}: Пропущена. Значения: Филиал="${rawBranch}", ИНН="${rawClientTIN}", Тип="${rawOrderType}", Номер="${rawOrderNumber}", Статус="${rawStatus}"`)
-              console.log(`Строка ${rowNumber}: Ключи record:`, Object.keys(record))
-            }
-            skippedRecords.push({ row: rowNumber, reason: 'Отсутствуют обязательные поля' })
-            skipped++
-            return callback()
-          }
-
-          const clientTIN = rawClientTIN.replace(/\D/g, '')
-          if (!clientTIN || !clientTINsSet.has(clientTIN)) {
-            if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
-              console.log(`[DEBUG] Пропущена - клиент с ИНН ${clientTIN} не найден`)
-            }
-            skippedRecords.push({ row: rowNumber, reason: `Клиент с ИНН ${clientTIN} не найден` })
-            skipped++
-            return callback()
-          }
-
-          const exportDate = parseDate(rawExportDate) || new Date()
-          const shipmentDate = parseDate(rawShipmentDate)
-          const acceptanceDate = parseDate(rawAcceptanceDate)
-          
-          // Фильтрация по датам: пропускаем записи старше 3 месяцев
-          if (filterLast3Months && dateThreshold) {
-            const hasRecentDate = 
-              (exportDate && exportDate >= dateThreshold) ||
-              (shipmentDate && shipmentDate >= dateThreshold) ||
-              (acceptanceDate && acceptanceDate >= dateThreshold)
-            
-            if (!hasRecentDate) {
-              if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
-                console.log(`[DEBUG] Пропущена - дата старше 3 месяцев: exportDate=${exportDate}, shipmentDate=${shipmentDate}, acceptanceDate=${acceptanceDate}`)
-              }
-              skipped++
-              return callback()
-            }
-          }
-          
-          const packagesPlanned = parseInteger(rawPackagesPlanned)
-          const packagesActual = parseInteger(rawPackagesActual)
-          const linesPlanned = parseInteger(rawLinesPlanned)
-          const linesActual = parseInteger(rawLinesActual)
-
-          const key = orderKey(rawBranch, rawOrderType, rawOrderNumber, clientTIN)
-          
-          // Проверяем дубликаты в CSV файле
-          if (csvSeenKeys.has(key)) {
-            // Это дубликат в CSV - пропускаем
-            skipped++
-            if (rowNumber <= 10) {
-              console.log(`Строка ${rowNumber}: Пропущена - дубликат в CSV (уже обработана ранее)`)
-            }
-            return callback()
-          }
-          csvSeenKeys.add(key)
-          csvOrderKeys.add(key)
-
-          const existingOrder = existingOrdersMap.get(key)
-
-          if (existingOrder) {
-            if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
-              console.log(`[DEBUG] Найдена в памяти: ID=${existingOrder.id}, будет обновлена с КИС=${rawKisNumber}`)
-            }
-            updateBatch.push({
-              id: existingOrder.id,
-              data: {
-                branch: rawBranch,
-                orderType: rawOrderType,
-                orderNumber: rawOrderNumber,
-                kisNumber: rawKisNumber || '',
-                exportDate,
-                shipmentDate,
-                status: rawStatus,
-                packagesPlanned,
-                packagesActual,
-                linesPlanned,
-                linesActual,
-                counterparty: rawCounterparty || 'Не указан',
-                acceptanceDate,
-              }
-            })
-            // Обрабатываем обновления батчами по 1000
-            if (updateBatch.length >= 1000) {
-              await processBatches()
-            }
-          } else {
-            // Проверяем в БД на случай, если запись не в памяти (для старых записей или при полном импорте)
-            if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
-              console.log(`[DEBUG] Ищем в БД: branch="${rawBranch}", orderType="${rawOrderType}", orderNumber="${rawOrderNumber}", clientTIN="${clientTIN}"`)
-            }
-            // Используем raw query с TRIM для точного сравнения (учитываем возможные пробелы в БД)
-            const existingInDbResult = await prisma.$queryRaw<Array<{ id: string; kis_number: string }>>`
-              SELECT id, kis_number
-              FROM "order"
-              WHERE TRIM(branch) = ${rawBranch}
-                AND TRIM(order_type) = ${rawOrderType}
-                AND TRIM(order_number) = ${rawOrderNumber}
-                AND TRIM(client_tin) = ${clientTIN}
-              LIMIT 1
-            `
-            const existingInDb = existingInDbResult[0] ? { id: existingInDbResult[0].id, kisNumber: existingInDbResult[0].kis_number } : null
-
-            if (existingInDb) {
-              if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
-                console.log(`[DEBUG] Найдена в БД: ID=${existingInDb.id}, текущий КИС="${existingInDb.kisNumber}", новый КИС="${rawKisNumber}"`)
-              }
-              updateBatch.push({
-                id: existingInDb.id,
-                data: {
-                  branch: rawBranch,
-                  orderType: rawOrderType,
-                  orderNumber: rawOrderNumber,
-                  kisNumber: rawKisNumber || '',
-                  exportDate,
-                  shipmentDate,
-                  status: rawStatus,
-                  packagesPlanned,
-                  packagesActual,
-                  linesPlanned,
-                  linesActual,
-                  counterparty: rawCounterparty || 'Не указан',
-                  acceptanceDate,
-                }
-              })
-              // Обрабатываем обновления батчами по 1000
-              if (updateBatch.length >= 1000) {
-                await processBatches()
-              }
-            } else {
-              if (rawKisNumber && (rawKisNumber.includes('ЮБА0502021_20230502') || rawKisNumber.includes('ЮБА0502021_2023050244'))) {
-                console.log(`[DEBUG] НЕ найдена в БД! Будет создана новая запись с КИС="${rawKisNumber}"`)
-                console.log(`[DEBUG] Параметры поиска: branch="${rawBranch}", orderType="${rawOrderType}", orderNumber="${rawOrderNumber}", clientTIN="${clientTIN}"`)
-              }
-              createBatch.push({
-                branch: rawBranch,
-                orderType: rawOrderType,
-                orderNumber: rawOrderNumber,
-                kisNumber: rawKisNumber || '',
-                exportDate,
-                shipmentDate,
-                status: rawStatus,
-                packagesPlanned,
-                packagesActual,
-                linesPlanned,
-                linesActual,
-                counterparty: rawCounterparty || 'Не указан',
-                acceptanceDate,
-                clientTIN,
-              })
-              if (createBatch.length >= BATCH_SIZE) await processBatches()
-            }
-          }
-
-          if (rowNumber % 1000 === 0) {
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-            const rate = (rowNumber / (Date.now() - startTime)) * 1000
-            console.log(`Обработано ${rowNumber} записей | Импортировано: ${imported} | Обновлено: ${updated} | Пропущено: ${skipped} | Скорость: ${rate.toFixed(0)} зап/сек`)
-            console.log(`  В createBatch: ${createBatch.length}, В updateBatch: ${updateBatch.length}`)
-          }
-        } catch (error) {
-          errors++
-          skippedRecords.push({ row: rowNumber, reason: `Ошибка: ${error instanceof Error ? error.message : String(error)}` })
-        }
+        const decoded = chunk.toString('utf-8')
+        this.push(decoded)
         callback()
-      },
-    })
-
-    console.log('Начинаем обработку CSV потока...')
-    await pipeline(readStream, decodeStream, parser, processStream)
-    console.log(`CSV поток завершен. Всего обработано строк: ${rowNumber}`)
-    console.log(`Обрабатываем финальные батчи: createBatch=${createBatch.length}, updateBatch=${updateBatch.length}`)
-    await processBatches()
-    console.log('Финальные батчи обработаны')
-
-    // Удаляем записи, отсутствующие в CSV
-    // При фильтрации удаляем только записи из диапазона последних 3 месяцев
-    if (filterLast3Months && dateThreshold) {
-      console.log('\nРежим фильтрации: удаление только записей за последние 3 месяца, отсутствующих в CSV...')
-    } else {
-      console.log('\nУдаляем записи, отсутствующие в CSV...')
-    }
-    let deleted = 0
-    const deleteBatch: string[] = []
-    
-    for (const [key, order] of existingOrdersMap.entries()) {
-      if (!csvOrderKeys.has(key)) {
-        deleteBatch.push(order.id)
-        if (deleteBatch.length >= BATCH_SIZE) {
-          await prisma.order.deleteMany({ where: { id: { in: deleteBatch } } })
-          deleted += deleteBatch.length
-          deleteBatch.length = 0
-        }
+      } catch (error) {
+        callback(error as Error)
       }
     }
+  })
+
+  // Парсер CSV
+  const parser = parse({
+    delimiter: ';',
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+    relax_column_count: true,
+    bom: true, // Автоматически удаляет BOM
+  })
+
+  // Трансформ для обработки записей
+  const processStream = new Transform({
+    objectMode: true,
+    async transform(record: OrderCsvRow, encoding, callback) {
+      rowNumber++
+      
+      try {
+        const rawBranch = record.Филиал ? cleanValue(String(record.Филиал)).trim() : ''
+        const rawOrderType = record['Тип заказа'] ? cleanValue(String(record['Тип заказа'])).trim() : ''
+        const rawOrderNumber = record['Номер заказа'] ? cleanValue(String(record['Номер заказа'])).trim() : ''
+        const rawKisNumber = record['Номер заказа КИС'] ? cleanValue(String(record['Номер заказа КИС'])).trim() : ''
+        const rawExportDate = record['Дата выгрузки заказа'] ? String(record['Дата выгрузки заказа']) : ''
+        const rawShipmentDate = record['Плановая дата отгрузки'] ? String(record['Плановая дата отгрузки']) : ''
+        const rawStatus = record.Статус ? cleanValue(String(record.Статус)) : ''
+        const rawPackagesPlanned = record.КоличествоУпаковокПлан ? String(record.КоличествоУпаковокПлан) : '0'
+        const rawPackagesActual = record.КоличествоУпаковокФакт ? String(record.КоличествоУпаковокФакт) : '0'
+        const rawLinesPlanned = record.КоличествоСтрокПлан ? String(record.КоличествоСтрокПлан) : '0'
+        const rawLinesActual = record.КоличествоСтрокФакт ? String(record.КоличествоСтрокФакт) : '0'
+        const rawCounterparty = record.Контрагент ? cleanValue(String(record.Контрагент)) : ''
+        const rawAcceptanceDate = record['Дата приемки/отгрузки'] ? String(record['Дата приемки/отгрузки']) : ''
+        const rawClientTIN = record.ИНН ? cleanValue(String(record.ИНН)) : ''
+
+        // Минимальная валидация - только обязательные поля
+        if (!rawBranch || !rawClientTIN || !rawOrderType || !rawOrderNumber || !rawStatus) {
+          skipped++
+          return callback()
+        }
+
+        const clientTIN = rawClientTIN.replace(/\D/g, '')
+        if (!clientTIN) {
+          skipped++
+          return callback()
+        }
+
+        // Проверяем существование клиента перед созданием записи
+        if (!clientTINsSet.has(clientTIN)) {
+          skipped++
+          return callback()
+        }
+
+        const exportDate = parseDate(rawExportDate) || new Date()
+        const shipmentDate = parseDate(rawShipmentDate)
+        const acceptanceDate = parseDate(rawAcceptanceDate)
+        
+        const packagesPlanned = parseInteger(rawPackagesPlanned)
+        const packagesActual = parseInteger(rawPackagesActual)
+        const linesPlanned = parseInteger(rawLinesPlanned)
+        const linesActual = parseInteger(rawLinesActual)
+
+        const key = orderKey(rawBranch, rawOrderType, rawOrderNumber, clientTIN)
+        
+        // Проверяем дубликаты в CSV файле
+        if (csvSeenKeys.has(key)) {
+          skipped++
+          return callback()
+        }
+        csvSeenKeys.add(key)
+
+        const existingOrder = existingOrdersMap.get(key)
+
+        if (existingOrder) {
+          updateBatch.push({
+            id: existingOrder.id,
+            data: {
+              branch: rawBranch,
+              orderType: rawOrderType,
+              orderNumber: rawOrderNumber,
+              kisNumber: rawKisNumber || '',
+              exportDate,
+              shipmentDate,
+              status: rawStatus,
+              packagesPlanned,
+              packagesActual,
+              linesPlanned,
+              linesActual,
+              counterparty: rawCounterparty || 'Не указан',
+              acceptanceDate,
+            }
+          })
+          // Обрабатываем обновления батчами по 1000
+          if (updateBatch.length >= 1000) {
+            await processBatches()
+          }
+        } else {
+          createBatch.push({
+            branch: rawBranch,
+            orderType: rawOrderType,
+            orderNumber: rawOrderNumber,
+            kisNumber: rawKisNumber || '',
+            exportDate,
+            shipmentDate,
+            status: rawStatus,
+            packagesPlanned,
+            packagesActual,
+            linesPlanned,
+            linesActual,
+            counterparty: rawCounterparty || 'Не указан',
+            acceptanceDate,
+            clientTIN,
+          })
+          // Добавляем в память с временным ID
+          existingOrdersMap.set(key, { id: '' })
+          if (createBatch.length >= BATCH_SIZE) await processBatches()
+        }
+
+        if (rowNumber % 10000 === 0) {
+          const elapsedSeconds = (Date.now() - startTime) / 1000
+          const elapsed = elapsedSeconds.toFixed(1)
+          const rate = (rowNumber / elapsedSeconds) * 1000
+          const minutesElapsed = (elapsedSeconds / 60).toFixed(1)
+          console.log(`[${fileName}] Обработано ${rowNumber} записей | Импортировано: ${imported} | Обновлено: ${updated} | Пропущено: ${skipped} | Скорость: ${rate.toFixed(0)} зап/сек | Время: ${minutesElapsed} мин`)
+        }
+      } catch (error) {
+        errors++
+      }
+      callback()
+    },
+  })
+
+  console.log(`Начинаем обработку CSV потока для ${fileName}...`)
+  await pipeline(readStream, decodeStream, parser, processStream)
+  console.log(`CSV поток завершен для ${fileName}. Всего обработано строк: ${rowNumber}`)
+  console.log(`Обрабатываем финальные батчи: createBatch=${createBatch.length}, updateBatch=${updateBatch.length}`)
+  await processBatches()
+  console.log('Финальные батчи обработаны')
+
+  const totalDuration = ((Date.now() - startTime) / 1000).toFixed(1)
+  console.log(`\n=== Результаты импорта ${fileName} ===`)
+  console.log(`Создано новых: ${imported}`)
+  console.log(`Обновлено: ${updated}`)
+  console.log(`Пропущено: ${skipped}`)
+  console.log(`Ошибок: ${errors}`)
+  console.log(`Время выполнения: ${totalDuration} сек`)
+
+  return { imported, updated, skipped, errors }
+}
+
+async function main() {
+  try {
+    console.log('=== Ручной импорт orders: быстрый режим без проверок ===')
+    console.log('Импортируем оба файла: orders_online.csv и orders_save.csv')
     
-    if (deleteBatch.length > 0) {
-      await prisma.order.deleteMany({ where: { id: { in: deleteBatch } } })
-      deleted += deleteBatch.length
+    // Проверяем, нужно ли очистить таблицу перед импортом
+    const clearBeforeImport = process.env.CLEAR_BEFORE_IMPORT === 'true'
+    
+    if (clearBeforeImport) {
+      console.log('\n⚠️  ВНИМАНИЕ: Режим полной очистки таблицы перед импортом!')
+      console.log('Удаляем все существующие записи из таблицы orders...')
+      const deletedCount = await prisma.order.deleteMany({})
+      console.log(`Удалено ${deletedCount.count} записей из таблицы orders`)
+      console.log('Начинаем импорт в пустую таблицу...\n')
+    } else {
+      console.log('Режим: обновление существующих записей и добавление новых (upsert)')
+      console.log('Для полной очистки таблицы перед импортом используйте: CLEAR_BEFORE_IMPORT=true npm run import:orders\n')
     }
+    
+    const ordersDir = join(process.cwd(), 'table_data', 'orders')
+    const ordersOnlinePath = join(ordersDir, 'orders_online.csv')
+    const ordersSavePath = join(ordersDir, 'orders_save.csv')
+
+    const startTime = Date.now()
+    
+    // Импортируем оба файла последовательно
+    // Для второго файла clearBeforeImport всегда false, так как очистка уже выполнена
+    const result1 = await processCsvFile(ordersOnlinePath, 'orders_online.csv', clearBeforeImport)
+    const result2 = await processCsvFile(ordersSavePath, 'orders_save.csv', false)
 
     const totalDuration = ((Date.now() - startTime) / 1000).toFixed(1)
-    console.log('\n=== Результаты импорта ===')
-    console.log(`Создано новых: ${imported}`)
-    console.log(`Обновлено: ${updated}`)
-    console.log(`Удалено: ${deleted}`)
-    console.log(`Пропущено: ${skipped}`)
-    console.log(`Ошибок: ${errors}`)
-    console.log(`Время выполнения: ${totalDuration} сек`)
+    console.log('\n=== Итоговые результаты импорта ===')
+    console.log(`Создано новых: ${result1.imported + result2.imported}`)
+    console.log(`Обновлено: ${result1.updated + result2.updated}`)
+    console.log(`Пропущено: ${result1.skipped + result2.skipped}`)
+    console.log(`Ошибок: ${result1.errors + result2.errors}`)
+    console.log(`Общее время выполнения: ${totalDuration} сек`)
 
     await prisma.importMetadata.upsert({
       where: { importType: 'orders' },
       update: {
         lastImportAt: new Date(),
-        recordsImported: imported,
-        recordsUpdated: updated,
-        recordsDeleted: deleted,
-        recordsSkipped: skipped,
-        errors: errors,
+        recordsImported: result1.imported + result2.imported,
+        recordsUpdated: result1.updated + result2.updated,
+        recordsDeleted: 0,
+        recordsSkipped: result1.skipped + result2.skipped,
+        errors: result1.errors + result2.errors,
       },
       create: {
         importType: 'orders',
         lastImportAt: new Date(),
-        recordsImported: imported,
-        recordsUpdated: updated,
-        recordsDeleted: deleted,
-        recordsSkipped: skipped,
-        errors: errors,
+        recordsImported: result1.imported + result2.imported,
+        recordsUpdated: result1.updated + result2.updated,
+        recordsDeleted: 0,
+        recordsSkipped: result1.skipped + result2.skipped,
+        errors: result1.errors + result2.errors,
       },
     })
-
-    if (skippedRecords.length > 0) {
-      console.log('\n=== Детализация пропущенных записей (первые 50) ===')
-      skippedRecords.slice(0, 50).forEach(({ row, reason }) => {
-        console.log(`Строка ${row}: ${reason}`)
-      })
-      if (skippedRecords.length > 50) {
-        console.log(`\n... и еще ${skippedRecords.length - 50} пропущенных записей`)
-      }
-    }
   } catch (error) {
     console.error('Критическая ошибка:', error)
     throw error

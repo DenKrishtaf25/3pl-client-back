@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config'
 import { APP_GUARD } from '@nestjs/core'
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler'
+import { ScheduleModule } from '@nestjs/schedule'
 import { AuthModule } from './auth/auth.module'
 import { UserModule } from './user/user.module'
 import { ClientModule } from './client/client.module'
@@ -17,6 +18,7 @@ import { SchedulerModule } from './scheduler/scheduler.module'
 @Module({
   imports: [
     ConfigModule.forRoot(),
+    ScheduleModule.forRoot(),
     // Настройка Rate Limiting
     // По умолчанию: 100 запросов в минуту с одного IP
     ThrottlerModule.forRoot([{

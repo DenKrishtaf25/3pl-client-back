@@ -1,17 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { Cron, CronExpression } from '@nestjs/schedule'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 
 const execAsync = promisify(exec)
 
 @Injectable()
-export class OrderImportService {
-  private readonly logger = new Logger(OrderImportService.name)
+export class OrderOnlineImportService {
+  private readonly logger = new Logger(OrderOnlineImportService.name)
   private isRunning = false
 
-  async handleOrderImport() {
+  // Запускаем каждые 30 минут
+  @Cron('0 */30 * * * *')
+  async handleOrderOnlineImport() {
     if (this.isRunning) {
-      this.logger.warn('Импорт orders уже выполняется, пропускаем...')
+      this.logger.warn('Импорт orders_online уже выполняется, пропускаем...')
       return
     }
 
@@ -19,7 +22,7 @@ export class OrderImportService {
     const startTime = Date.now()
     
     try {
-      this.logger.log('Начинаем автоматический импорт orders_online.csv...')
+      this.logger.log('Начинаем автоматический импорт orders_online.csv (каждые 30 минут)...')
       
       // Определяем команду в зависимости от окружения
       const isProduction = process.env.NODE_ENV === 'production'
@@ -36,10 +39,10 @@ export class OrderImportService {
       const duration = ((Date.now() - startTime) / 1000).toFixed(1)
       
       if (stderr) {
-        this.logger.warn(`Импорт orders завершен с предупреждениями за ${duration} сек`)
+        this.logger.warn(`Импорт orders_online завершен с предупреждениями за ${duration} сек`)
         this.logger.debug(stderr)
       } else {
-        this.logger.log(`Импорт orders успешно завершен за ${duration} сек`)
+        this.logger.log(`Импорт orders_online успешно завершен за ${duration} сек`)
       }
       
       if (stdout) {
@@ -50,7 +53,7 @@ export class OrderImportService {
       }
     } catch (error) {
       const duration = ((Date.now() - startTime) / 1000).toFixed(1)
-      this.logger.error(`Ошибка при импорте orders за ${duration} сек:`, error)
+      this.logger.error(`Ошибка при импорте orders_online за ${duration} сек:`, error)
       
       if (error instanceof Error) {
         this.logger.error(`Сообщение об ошибке: ${error.message}`)
@@ -60,17 +63,16 @@ export class OrderImportService {
       }
     } finally {
       this.isRunning = false
-      // Планирование следующего импорта теперь управляется ImportManagerService
     }
   }
 
   // Метод для ручного запуска импорта
-  async importOrderManually() {
+  async importOrderOnlineManually() {
     if (this.isRunning) {
-      throw new Error('Импорт orders уже выполняется')
+      throw new Error('Импорт orders_online уже выполняется')
     }
     
-    await this.handleOrderImport()
+    await this.handleOrderOnlineImport()
   }
 }
 
