@@ -20,18 +20,20 @@ export class EmailService {
 		this.logger.log(`SMTP_USER: ${smtpUser ? 'configured' : 'NOT CONFIGURED'}`)
 		this.logger.log(`SMTP_PASSWORD: ${smtpPassword ? 'configured' : 'NOT CONFIGURED'}`)
 		
-		if (!smtpUser || !smtpPassword) {
-			this.logger.warn('SMTP credentials not configured. Email sending will fail.')
-		}
-		
 		const transportOptions: any = {
 			host: smtpHost,
 			port: smtpPort,
 			secure: smtpSecure,
-			auth: {
+		}
+
+		// Настраиваем аутентификацию только если заданы креды
+		if (smtpUser && smtpPassword) {
+			transportOptions.auth = {
 				user: smtpUser,
 				pass: smtpPassword,
-			},
+			}
+		} else {
+			this.logger.warn('SMTP credentials not configured. EmailService will use unauthenticated connection (relay).')
 		}
 		
 		// Для порта 587 (не secure) требуется TLS
@@ -54,16 +56,10 @@ export class EmailService {
 
 	async sendRegistrationEmail(email: string, password: string): Promise<void> {
 		const smtpUser = this.configService.get<string>('SMTP_USER')
-		const smtpFrom = this.configService.get<string>('SMTP_FROM', smtpUser)
+		const smtpFrom = this.configService.get<string>('SMTP_FROM', smtpUser || 'no-reply@example.com')
 		
 		this.logger.log(`Sending registration email to ${email}`)
 		this.logger.log(`From: ${smtpFrom}`)
-		
-		if (!smtpUser) {
-			const error = 'SMTP_USER is not configured in environment variables'
-			this.logger.error(error)
-			throw new Error(error)
-		}
 		
 		const mailOptions = {
 			from: smtpFrom,
@@ -116,7 +112,7 @@ export class EmailService {
 		originalFileName?: string
 	): Promise<void> {
 		const smtpUser = this.configService.get<string>('SMTP_USER')
-		const smtpFrom = this.configService.get<string>('SMTP_FROM', smtpUser)
+		const smtpFrom = this.configService.get<string>('SMTP_FROM', smtpUser || 'no-reply@example.com')
 		const recipientEmail = to || 'claims-3pl@pecom.ru'
 		
 		this.logger.log(`Sending complaint email to ${recipientEmail}`)
@@ -125,13 +121,6 @@ export class EmailService {
 		if (filePath) {
 			this.logger.log(`Attachment: ${filePath}`)
 		}
-		
-		if (!smtpUser) {
-			const error = 'SMTP_USER is not configured in environment variables'
-			this.logger.error(error)
-			throw new Error(error)
-		}
-
 		// Маппинг названий полей на русский язык
 		const fieldTranslations: Record<string, string> = {
 			firstName: 'Имя',
