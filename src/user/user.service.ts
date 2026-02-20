@@ -2,15 +2,13 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../prisma.service'
 import { UserDto } from './user.dto'
 import { hash } from 'argon2'
-import { EmailService } from '../email/email.service'
 
 @Injectable()
 export class UserService {
 	private readonly logger = new Logger(UserService.name)
 
 	constructor(
-		private prisma: PrismaService,
-		private emailService: EmailService
+		private prisma: PrismaService
 	) {
 	}
 
@@ -75,22 +73,6 @@ export class UserService {
 			},
 			include: { clients: true },
 		})
-
-		// Отправка email с учетными данными, если указан флаг sendEmail
-		this.logger.log(`Creating user - sendEmail flag: ${dto.sendEmail}, email: ${dto.email}`)
-		
-		if (dto.sendEmail === true && dto.email) {
-			this.logger.log(`Attempting to send registration email to ${dto.email}`)
-			try {
-				await this.emailService.sendRegistrationEmail(dto.email, dto.password)
-				this.logger.log(`Registration email sent successfully to ${dto.email}`)
-			} catch (error) {
-				// Логируем ошибку, но не прерываем создание пользователя
-				this.logger.error(`Failed to send registration email to ${dto.email}:`, error)
-			}
-		} else {
-			this.logger.log(`Email not sent - sendEmail: ${dto.sendEmail}, email: ${dto.email}`)
-		}
 
 		return user
 	}
