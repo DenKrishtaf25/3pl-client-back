@@ -11,7 +11,7 @@ import { ComplaintsImportService } from './complaints-import.service'
 export class ImportManagerService implements OnModuleInit {
   private readonly logger = new Logger(ImportManagerService.name)
   private isInitialImportRunning = false
-  private readonly IMPORT_INTERVAL_MS = 60 * 60 * 1000 // 60 минут (увеличено с 20 для предотвращения OOM)
+  private readonly IMPORT_INTERVAL_MS = 30 * 60 * 1000 // 30 минут
   private timeoutId: NodeJS.Timeout | null = null
 
   constructor(
@@ -125,13 +125,13 @@ export class ImportManagerService implements OnModuleInit {
       clearTimeout(this.timeoutId)
     }
 
-    // Планируем следующий цикл импортов через 60 минут (увеличено для предотвращения OOM)
+    // Планируем следующий цикл импортов через 30 минут
     this.timeoutId = setTimeout(() => {
       this.runInitialImportsSequence()
     }, this.IMPORT_INTERVAL_MS)
 
     const nextRunTime = new Date(Date.now() + this.IMPORT_INTERVAL_MS)
-    this.logger.log(`Следующий цикл импортов запланирован на ${nextRunTime.toLocaleString()} (через 60 минут)`)
+    this.logger.log(`Следующий цикл импортов запланирован на ${nextRunTime.toLocaleString()} (через 30 минут)`)
   }
 
   /**

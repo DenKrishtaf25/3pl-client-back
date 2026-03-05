@@ -529,9 +529,18 @@ export class OrderService {
   }
 
   async getLastImportInfo() {
-    const metadata = await this.prisma.importMetadata.findUnique({
-      where: { importType: 'orders' }
-    })
+    // Автообновление orders выполняется через импорт orders_online.
+    // Поэтому сначала берем метадату orders_online, а если ее нет - fallback на orders.
+    const [onlineMetadata, ordersMetadata] = await Promise.all([
+      this.prisma.importMetadata.findUnique({
+        where: { importType: 'orders_online' }
+      }),
+      this.prisma.importMetadata.findUnique({
+        where: { importType: 'orders' }
+      }),
+    ])
+
+    const metadata = onlineMetadata ?? ordersMetadata
 
     if (!metadata) {
       return {
