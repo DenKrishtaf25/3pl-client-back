@@ -77,6 +77,19 @@ function parseInteger(value: string): number {
   return num
 }
 
+function parseDecimal(value: string): number {
+  if (!value) return 0
+
+  // Поддерживаем форматы: "1234.56", "1234,56", "1 234,56"
+  const normalized = value.trim().replace(/\s/g, '').replace(',', '.')
+  const num = Number.parseFloat(normalized)
+
+  if (Number.isNaN(num)) return 0
+
+  // Ограничиваем до сотых, чтобы не плодить хвосты float
+  return Number(num.toFixed(2))
+}
+
 const orderKey = (b: string, ot: string, on: string, t: string) => `${b}|${ot}|${on}|${t}`
 
 async function processCsvFile(csvFilePath: string, fileName: string, clearBeforeImport: boolean = false) {
@@ -290,8 +303,8 @@ async function processCsvFile(csvFilePath: string, fileName: string, clearBefore
         const shipmentDate = parseDate(rawShipmentDate)
         const acceptanceDate = parseDate(rawAcceptanceDate)
         
-        const packagesPlanned = parseInteger(rawPackagesPlanned)
-        const packagesActual = parseInteger(rawPackagesActual)
+        const packagesPlanned = parseDecimal(rawPackagesPlanned)
+        const packagesActual = parseDecimal(rawPackagesActual)
         const linesPlanned = parseInteger(rawLinesPlanned)
         const linesActual = parseInteger(rawLinesActual)
 

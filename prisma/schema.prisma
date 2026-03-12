@@ -115,8 +115,8 @@ model Order {
   exportDate      DateTime @map("export_date")
   shipmentDate    DateTime? @map("shipment_date")
   status          String
-  packagesPlanned Int      @map("packages_planned")
-  packagesActual  Int      @map("packages_actual")
+  packagesPlanned Float    @map("packages_planned")
+  packagesActual  Float    @map("packages_actual")
   linesPlanned    Int      @map("lines_planned")
   linesActual     Int      @map("lines_actual")
   counterparty    String
