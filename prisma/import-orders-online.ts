@@ -30,6 +30,11 @@ function cleanValue(value: string): string {
   return value.trim().replace(/;+$/, '')
 }
 
+function normalizeTin(value: string): string {
+  if (!value) return ''
+  return value.replace(/\D/g, '')
+}
+
 function parseDate(dateStr: string): Date | null {
   if (!dateStr || !dateStr.trim()) return null
   const cleaned = dateStr.trim()
@@ -146,7 +151,7 @@ async function main() {
         const normalizedBranch = order.branch.trim()
         const normalizedOrderType = order.orderType.trim()
         const normalizedOrderNumber = order.orderNumber.trim()
-        const normalizedClientTIN = order.clientTIN.trim()
+        const normalizedClientTIN = normalizeTin(order.clientTIN.trim())
         const key = orderKey(normalizedBranch, normalizedOrderType, normalizedOrderNumber, normalizedClientTIN)
         existingOrdersMap.set(key, { id: order.id })
       })
@@ -215,7 +220,7 @@ async function main() {
                 const normalizedBranch = order.branch.trim()
                 const normalizedOrderType = order.orderType.trim()
                 const normalizedOrderNumber = order.orderNumber.trim()
-                const normalizedClientTIN = order.clientTIN.trim()
+                const normalizedClientTIN = normalizeTin(order.clientTIN.trim())
                 return orderKey(normalizedBranch, normalizedOrderType, normalizedOrderNumber, normalizedClientTIN)
               })
             )
@@ -226,7 +231,7 @@ async function main() {
                 const normalizedBranch = order.branch.trim()
                 const normalizedOrderType = order.orderType.trim()
                 const normalizedOrderNumber = order.orderNumber.trim()
-                const normalizedClientTIN = order.clientTIN.trim()
+                const normalizedClientTIN = normalizeTin(order.clientTIN.trim())
                 return [
                   orderKey(normalizedBranch, normalizedOrderType, normalizedOrderNumber, normalizedClientTIN),
                   order.id
@@ -388,7 +393,7 @@ async function main() {
             return callback()
           }
 
-          const clientTIN = rawClientTIN.replace(/\D/g, '')
+          const clientTIN = normalizeTin(rawClientTIN)
           if (!clientTIN || !clientTINsSet.has(clientTIN)) {
             skippedRecords.push({ row: rowNumber, reason: `Клиент с ИНН ${clientTIN} не найден` })
             skipped++
