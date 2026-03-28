@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { Cron, CronExpression } from '@nestjs/schedule'
+import { Cron } from '@nestjs/schedule'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 
@@ -10,8 +10,8 @@ export class OrderOnlineImportService {
   private readonly logger = new Logger(OrderOnlineImportService.name)
   private isRunning = false
 
-  // Запускаем каждые 30 минут
-  @Cron('0 */30 * * * *')
+  // Запускаем каждые 2 часа (в начале часа: 0:00, 2:00, 4:00, …)
+  @Cron('0 0 */2 * * *')
   async handleOrderOnlineImport() {
     if (this.isRunning) {
       this.logger.warn('Импорт orders_online уже выполняется, пропускаем...')
@@ -22,7 +22,7 @@ export class OrderOnlineImportService {
     const startTime = Date.now()
     
     try {
-      this.logger.log('Начинаем автоматический импорт orders_online.csv (каждые 30 минут)...')
+      this.logger.log('Начинаем автоматический импорт orders_online.csv (каждые 2 часа)...')
       
       // Определяем команду в зависимости от окружения
       const isProduction = process.env.NODE_ENV === 'production'

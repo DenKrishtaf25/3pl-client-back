@@ -28,14 +28,18 @@ export class ImportManagerService implements OnModuleInit {
     this.logger.log('ImportManagerService инициализирован. Запуск последовательного импорта...')
     // Запускаем первый цикл импортов после небольшой задержки, чтобы приложение полностью запустилось
     setImmediate(() => {
-      this.runInitialImportsSequence()
+      this.runInitialImportsSequence(true)
     })
   }
 
   /**
    * Запускает последовательный импорт всех таблиц при старте приложения
    */
-  private async runInitialImportsSequence() {
+  /**
+   * @param includeOrdersOnline — при старте приложения true (один раз подтянуть заказы);
+   *   в повторных циклах каждые 30 мин — false, т.к. orders_online ведёт OrderOnlineImportService (раз в 2 ч).
+   */
+  private async runInitialImportsSequence(includeOrdersOnline: boolean) {
     if (this.isInitialImportRunning) {
       this.logger.warn('Начальный импорт уже выполняется, пропускаем...')
       return
@@ -53,7 +57,9 @@ export class ImportManagerService implements OnModuleInit {
       await this.runImport('finance', () => this.financeImportService.handleFinanceImport())
       await this.runImport('analytics', () => this.analyticsImportService.handleAnalyticsImport())
       await this.runImport('analytic_orders', () => this.analyticOrderImportService.handleAnalyticOrderImport())
-      await this.runImport('orders', () => this.orderImportService.handleOrderImport())
+      if (includeOrdersOnline) {
+        await this.runImport('orders', () => this.orderImportService.handleOrderImport())
+      }
       await this.runImport('registry', () => this.registryImportService.handleRegistryImport())
       await this.runImport('stock', () => this.stockImportService.handleStockImport())
 
@@ -127,7 +133,7 @@ export class ImportManagerService implements OnModuleInit {
 
     // Планируем следующий цикл импортов через 30 минут
     this.timeoutId = setTimeout(() => {
-      this.runInitialImportsSequence()
+      this.runInitialImportsSequence(false)
     }, this.IMPORT_INTERVAL_MS)
 
     const nextRunTime = new Date(Date.now() + this.IMPORT_INTERVAL_MS)
@@ -142,7 +148,7 @@ export class ImportManagerService implements OnModuleInit {
       throw new Error('Импорт уже выполняется')
     }
     
-    await this.runInitialImportsSequence()
+    await this.runInitialImportsSequence(true)
   }
 }
 
