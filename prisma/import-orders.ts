@@ -30,6 +30,11 @@ function cleanValue(value: string): string {
   return value.trim().replace(/;+$/, '')
 }
 
+function normalizeTin(value: string): string {
+  if (!value) return ''
+  return value.replace(/\D/g, '')
+}
+
 function parseDate(dateStr: string): Date | null {
   if (!dateStr || !dateStr.trim()) return null
   const cleaned = dateStr.trim()
@@ -110,8 +115,10 @@ async function processCsvFile(csvFilePath: string, fileName: string, clearBefore
   // Загружаем список клиентов для проверки foreign key constraint
   console.log('Загружаем список клиентов для проверки...')
   const allClients = await prisma.client.findMany({ select: { TIN: true } })
-  const clientTINsSet = new Set(allClients.map(c => c.TIN))
-  console.log(`Загружено ${clientTINsSet.size} клиентов для проверки`)
+  const clientTINsSet = new Set(
+    allClients.map(c => normalizeTin((c.TIN || '').trim())).filter(Boolean),
+  )
+  console.log(`Загружено ${clientTINsSet.size} уникальных ИНН клиентов (после нормализации)`)
 
   // Загружаем все существующие записи в память для быстрого поиска (только если не делаем полную очистку)
   const existingOrdersMap = new Map<string, { id: string }>()
@@ -133,7 +140,7 @@ async function processCsvFile(csvFilePath: string, fileName: string, clearBefore
         const normalizedBranch = order.branch.trim()
         const normalizedOrderType = order.orderType.trim()
         const normalizedOrderNumber = order.orderNumber.trim()
-        const normalizedClientTIN = order.clientTIN.trim()
+        const normalizedClientTIN = normalizeTin(order.clientTIN.trim())
         const key = orderKey(normalizedBranch, normalizedOrderType, normalizedOrderNumber, normalizedClientTIN)
         existingOrdersMap.set(key, { id: order.id })
       })
@@ -287,7 +294,7 @@ async function processCsvFile(csvFilePath: string, fileName: string, clearBefore
           return callback()
         }
 
-        const clientTIN = rawClientTIN.replace(/\D/g, '')
+        const clientTIN = normalizeTin(rawClientTIN)
         if (!clientTIN) {
           skipped++
           return callback()

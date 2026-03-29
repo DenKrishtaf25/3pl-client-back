@@ -113,8 +113,11 @@ async function main() {
     console.log('Начинаем потоковый импорт orders_online.csv...')
 
     const allClients = await prisma.client.findMany({ select: { TIN: true } })
-    const clientTINsSet = new Set(allClients.map(c => c.TIN))
-    console.log(`Загружено ${clientTINsSet.size} клиентов`)
+    // Тот же normalizeTin, что и для ИНН из CSV — иначе клиент в БД с пробелами/дефисами не находится
+    const clientTINsSet = new Set(
+      allClients.map(c => normalizeTin((c.TIN || '').trim())).filter(Boolean),
+    )
+    console.log(`Загружено ${clientTINsSet.size} уникальных ИНН клиентов (после нормализации)`)
 
     const existingOrdersMap = new Map<string, { id: string }>()
     let skip = 0
