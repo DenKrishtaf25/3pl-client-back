@@ -11,7 +11,7 @@ async function fixDuplicateDates() {
     const importDateEnd = new Date('2025-12-08T15:40:00.000Z')
 
     // Находим все записи где shipmentDate и acceptanceDate одинаковые и в диапазоне импорта
-    const ordersToFix = await prisma.order.findMany({
+    const ordersToFix = await prisma.orderSave.findMany({
       where: {
         AND: [
           {
@@ -51,7 +51,7 @@ async function fixDuplicateDates() {
     // Устанавливаем NULL для этих дат, так как они были пустыми в CSV
     let fixed = 0
     for (const order of ordersToFix) {
-      await prisma.order.update({
+      await prisma.orderSave.update({
         where: { id: order.id },
         data: {
           shipmentDate: null,

@@ -7,17 +7,17 @@ async function removeDuplicates() {
     const checkOnly = process.argv.includes('--check')
     
     if (checkOnly) {
-      console.log('Проверка дубликатов в таблице order...\n')
+      console.log('Проверка дубликатов в таблице orders_save...\n')
       
       // Показываем статистику
-      const total = await prisma.order.count()
-      console.log(`Всего записей в таблице order: ${total}`)
+      const total = await prisma.orderSave.count()
+      console.log(`Всего записей в таблице orders_save: ${total}`)
       
       const totalDuplicates = await prisma.$queryRaw<Array<{ total: bigint }>>`
         SELECT SUM(count - 1) as total
         FROM (
           SELECT COUNT(*) as count
-          FROM "order"
+          FROM "orders_save"
           GROUP BY TRIM(branch), TRIM(order_type), TRIM(order_number), TRIM(client_tin)
           HAVING COUNT(*) > 1
         ) as duplicates
@@ -47,7 +47,7 @@ async function removeDuplicates() {
         TRIM(order_number) as order_number,
         TRIM(client_tin) as client_tin,
         COUNT(*) as count
-      FROM "order"
+      FROM "orders_save"
       GROUP BY TRIM(branch), TRIM(order_type), TRIM(order_number), TRIM(client_tin)
       HAVING COUNT(*) > 1
       ORDER BY count DESC
@@ -74,7 +74,7 @@ async function removeDuplicates() {
         updated_at: Date
       }>>`
         SELECT id, updated_at
-        FROM "order"
+        FROM "orders_save"
         WHERE TRIM(branch) = ${group.branch}
           AND TRIM(order_type) = ${group.order_type}
           AND TRIM(order_number) = ${group.order_number}
@@ -91,7 +91,7 @@ async function removeDuplicates() {
         // Удаляем батчами для экономии памяти
         if (idsToDelete.length >= batchSize) {
           console.log(`Удаляем батч из ${idsToDelete.length} записей...`)
-          const result = await prisma.order.deleteMany({
+          const result = await prisma.orderSave.deleteMany({
             where: { id: { in: idsToDelete } }
           })
           console.log(`Удалено ${result.count} записей (всего удалено: ${totalToDelete - idsToDelete.length + result.count})`)
@@ -106,7 +106,7 @@ async function removeDuplicates() {
     // Удаляем оставшиеся записи
     if (idsToDelete.length > 0) {
       console.log(`Удаляем финальный батч из ${idsToDelete.length} записей...`)
-      await prisma.order.deleteMany({
+      await prisma.orderSave.deleteMany({
         where: { id: { in: idsToDelete } }
       })
       console.log(`Удалено ${idsToDelete.length} записей`)
@@ -116,7 +116,7 @@ async function removeDuplicates() {
     console.log(`Всего удалено дубликатов: ${totalToDelete}`)
     
     // Проверяем результат
-    const remaining = await prisma.order.count()
+    const remaining = await prisma.orderSave.count()
     console.log(`Записей осталось: ${remaining}`)
     
     // Проверяем, остались ли дубликаты
@@ -124,7 +124,7 @@ async function removeDuplicates() {
       SELECT COUNT(*) as count
       FROM (
         SELECT COUNT(*) as cnt
-        FROM "order"
+        FROM "orders_save"
         GROUP BY TRIM(branch), TRIM(order_type), TRIM(order_number), TRIM(client_tin)
         HAVING COUNT(*) > 1
       ) as duplicates

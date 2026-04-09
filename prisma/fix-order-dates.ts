@@ -4,7 +4,7 @@ const prisma = new PrismaClient()
 
 async function fixOrderDates() {
   try {
-    console.log('Исправление неправильных дат в таблице order...\n')
+    console.log('Исправление неправильных дат в таблице orders_save...\n')
 
     // Дата импорта, которая использовалась как значение по умолчанию
     // Все записи с этой датой или близкой к ней нужно проверить
@@ -12,7 +12,7 @@ async function fixOrderDates() {
     const importDateEnd = new Date('2025-12-08T15:25:00.000Z')
 
     // Найдем все записи с shipmentDate в этом диапазоне
-    const ordersWithBadShipmentDate = await prisma.order.findMany({
+    const ordersWithBadShipmentDate = await prisma.orderSave.findMany({
       where: {
         shipmentDate: {
           gte: importDateStart,
@@ -38,7 +38,7 @@ async function fixOrderDates() {
     }
 
     // Получаем полный список для обновления
-    const allOrdersWithBadDates = await prisma.order.findMany({
+    const allOrdersWithBadDates = await prisma.orderSave.findMany({
       where: {
         OR: [
           {
@@ -93,7 +93,7 @@ async function fixOrderDates() {
       }
 
       if (Object.keys(updateData).length > 0) {
-        await prisma.order.update({
+        await prisma.orderSave.update({
           where: { id: order.id },
           data: updateData,
         })

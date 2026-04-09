@@ -145,10 +145,10 @@ async function main() {
     let skip = 0
     const mapPageSize = 5000
 
-    console.log('Загружаем существующие записи order за последние 3 месяца в память для сопоставления ключей...')
+    console.log('Загружаем существующие записи orders_online за последние 3 месяца в память для сопоставления ключей...')
 
     while (true) {
-      const batch = await prisma.order.findMany({
+      const batch = await prisma.orderOnline.findMany({
         select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true },
         where: {
           exportDate: {
@@ -191,14 +191,14 @@ async function main() {
 
     async function processBatches() {
       if (createBatch.length > 0) {
-        await prisma.order.createMany({ data: createBatch, skipDuplicates: true })
+        await prisma.orderOnline.createMany({ data: createBatch, skipDuplicates: true })
         imported += createBatch.length
         createBatch.length = 0
       }
 
       for (const update of updateBatch) {
         try {
-          await prisma.order.update({ where: { id: update.id }, data: update.data })
+          await prisma.orderOnline.update({ where: { id: update.id }, data: update.data })
           updated++
         } catch {
           errors++
@@ -308,7 +308,7 @@ async function main() {
             updateBatch.push({ id: existingOrder.id, data })
             if (updateBatch.length >= BATCH_SIZE) await processBatches()
           } else {
-            const existingInDb = await prisma.order.findFirst({
+            const existingInDb = await prisma.orderOnline.findFirst({
               where: {
                 branch: rawBranch,
                 orderType: rawOrderType,

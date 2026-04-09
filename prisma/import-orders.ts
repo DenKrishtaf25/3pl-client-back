@@ -97,8 +97,18 @@ function parseDecimal(value: string): number {
 
 const orderKey = (b: string, ot: string, on: string, t: string) => `${b}|${ot}|${on}|${t}`
 
-async function processCsvFile(csvFilePath: string, fileName: string, clearBeforeImport: boolean = false) {
-  console.log(`\n=== Обработка файла: ${fileName} ===`)
+type OrderTableTarget = 'save' | 'online'
+
+async function processCsvFile(
+  csvFilePath: string,
+  fileName: string,
+  options: { target: OrderTableTarget; loadExistingMap: boolean },
+) {
+  const { target, loadExistingMap } = options
+  const db =
+    target === 'save' ? prisma.orderSave : (prisma.orderOnline as unknown as typeof prisma.orderSave)
+
+  console.log(`\n=== Обработка файла: ${fileName} → таблица ${target === 'save' ? 'orders_save' : 'orders_online'} ===`)
   
   let imported = 0
   let updated = 0
@@ -123,13 +133,13 @@ async function processCsvFile(csvFilePath: string, fileName: string, clearBefore
   // Загружаем все существующие записи в память для быстрого поиска (только если не делаем полную очистку)
   const existingOrdersMap = new Map<string, { id: string }>()
   
-  if (!clearBeforeImport) {
-    console.log('Загружаем все существующие записи orders в память...')
+  if (loadExistingMap) {
+    console.log(`Загружаем существующие записи (${target}) в память...`)
     let skip = 0
     const loadBatchSize = 5000
     
     while (true) {
-      const batch = await prisma.order.findMany({
+      const batch = await db.findMany({
         select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true },
         skip,
         take: loadBatchSize,
@@ -151,9 +161,9 @@ async function processCsvFile(csvFilePath: string, fileName: string, clearBefore
       await new Promise(resolve => setImmediate(resolve))
     }
     
-    console.log(`Загружено ${existingOrdersMap.size} существующих записей orders в память`)
+    console.log(`Загружено ${existingOrdersMap.size} существующих записей в память`)
   } else {
-    console.log('Таблица очищена, импортируем только новые записи (без проверки существующих)')
+    console.log('Карта существующих записей не загружается (пустая таблица или первый проход после очистки)')
   }
 
   async function processBatches() {
@@ -162,7 +172,7 @@ async function processCsvFile(csvFilePath: string, fileName: string, clearBefore
       const batchStartTime = Date.now()
       const batchSize = createBatch.length
       try {
-        await prisma.order.createMany({ data: createBatch })
+        await db.createMany({ data: createBatch })
         imported += createBatch.length
         const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(2)
         if (batchSize >= 500) {
@@ -185,7 +195,7 @@ async function processCsvFile(csvFilePath: string, fileName: string, clearBefore
           let failCount = 0
           for (const record of batchCopy) {
             try {
-              await prisma.order.create({ data: record })
+              await db.create({ data: record })
               successCount++
               imported++
             } catch (innerError: any) {
@@ -219,7 +229,7 @@ async function processCsvFile(csvFilePath: string, fileName: string, clearBefore
         await Promise.all(
           batch.map(async (update) => {
             try {
-              await prisma.order.update({ where: { id: update.id }, data: update.data })
+              await db.update({ where: { id: update.id }, data: update.data })
               updated++
             } catch (error) {
               errors++
@@ -412,14 +422,14 @@ async function main() {
     const clearBeforeImport = process.env.CLEAR_BEFORE_IMPORT === 'true'
     
     if (clearBeforeImport) {
-      console.log('\n⚠️  ВНИМАНИЕ: Режим полной очистки таблицы перед импортом!')
-      console.log('Удаляем все существующие записи из таблицы orders...')
-      const deletedCount = await prisma.order.deleteMany({})
-      console.log(`Удалено ${deletedCount.count} записей из таблицы orders`)
-      console.log('Начинаем импорт в пустую таблицу...\n')
+      console.log('\n⚠️  ВНИМАНИЕ: Режим полной очистки orders_online и orders_save перед импортом!')
+      const delOn = await prisma.orderOnline.deleteMany({})
+      const delSv = await prisma.orderSave.deleteMany({})
+      console.log(`Удалено из orders_online: ${delOn.count}, из orders_save: ${delSv.count}`)
+      console.log('Начинаем импорт в пустые таблицы...\n')
     } else {
       console.log('Режим: обновление существующих записей и добавление новых (upsert)')
-      console.log('Для полной очистки таблицы перед импортом используйте: CLEAR_BEFORE_IMPORT=true npm run import:orders\n')
+      console.log('Для полной очистки таблиц перед импортом используйте: CLEAR_BEFORE_IMPORT=true npm run import:orders\n')
     }
     
     const ordersDir = join(process.cwd(), 'table_data', 'orders')
@@ -428,10 +438,14 @@ async function main() {
 
     const startTime = Date.now()
     
-    // Импортируем оба файла последовательно
-    // Для второго файла clearBeforeImport всегда false, так как очистка уже выполнена
-    const result1 = await processCsvFile(ordersOnlinePath, 'orders_online.csv', clearBeforeImport)
-    const result2 = await processCsvFile(ordersSavePath, 'orders_save.csv', false)
+    const result1 = await processCsvFile(ordersOnlinePath, 'orders_online.csv', {
+      target: 'online',
+      loadExistingMap: !clearBeforeImport,
+    })
+    const result2 = await processCsvFile(ordersSavePath, 'orders_save.csv', {
+      target: 'save',
+      loadExistingMap: true,
+    })
 
     const totalDuration = ((Date.now() - startTime) / 1000).toFixed(1)
     console.log('\n=== Итоговые результаты импорта ===')

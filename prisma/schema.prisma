@@ -39,7 +39,8 @@ model Client {
 
   stocks         Stock[]
   registries     Registry[]
-  orders         Order[]
+  ordersSave     OrderSave[]   @relation("ClientOrdersSave")
+  ordersOnline   OrderOnline[] @relation("ClientOrdersOnline")
   analytics      Analytics[]
   analyticOrders AnalyticOrder[]
   finances       Finance[]
@@ -103,26 +104,27 @@ model Registry {
   @@map("registry")
 }
 
-model Order {
+/// Архив заказов (полный импорт / история); бывшая таблица `order`.
+model OrderSave {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   branch          String
-  orderType       String   @map("order_type")
-  orderNumber     String   @map("order_number")
-  kisNumber       String   @map("kis_number")
-  exportDate      DateTime @map("export_date")
+  orderType       String    @map("order_type")
+  orderNumber     String    @map("order_number")
+  kisNumber       String    @map("kis_number")
+  exportDate      DateTime  @map("export_date")
   shipmentDate    DateTime? @map("shipment_date")
   status          String
-  packagesPlanned Float    @map("packages_planned")
-  packagesActual  Float    @map("packages_actual")
-  linesPlanned    Int      @map("lines_planned")
-  linesActual     Int      @map("lines_actual")
+  packagesPlanned Float     @map("packages_planned")
+  packagesActual  Float     @map("packages_actual")
+  linesPlanned    Int       @map("lines_planned")
+  linesActual     Int       @map("lines_actual")
   counterparty    String
   acceptanceDate  DateTime? @map("acceptance_date")
 
-  client    Client @relation(fields: [clientTIN], references: [TIN])
+  client    Client @relation("ClientOrdersSave", fields: [clientTIN], references: [TIN])
   clientTIN String @map("client_tin")
 
   @@index([clientTIN])
@@ -130,7 +132,38 @@ model Order {
   @@index([acceptanceDate])
   @@index([exportDate])
   @@index([shipmentDate])
-  @@map("order")
+  @@map("orders_save")
+}
+
+/// Онлайн-выгрузка (orders_online.csv); узкая таблица для быстрых инкрементальных импортов.
+model OrderOnline {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branch          String
+  orderType       String    @map("order_type")
+  orderNumber     String    @map("order_number")
+  kisNumber       String    @map("kis_number")
+  exportDate      DateTime  @map("export_date")
+  shipmentDate    DateTime? @map("shipment_date")
+  status          String
+  packagesPlanned Float     @map("packages_planned")
+  packagesActual  Float     @map("packages_actual")
+  linesPlanned    Int       @map("lines_planned")
+  linesActual     Int       @map("lines_actual")
+  counterparty    String
+  acceptanceDate  DateTime? @map("acceptance_date")
+
+  client    Client @relation("ClientOrdersOnline", fields: [clientTIN], references: [TIN])
+  clientTIN String @map("client_tin")
+
+  @@index([clientTIN])
+  @@index([createdAt])
+  @@index([acceptanceDate])
+  @@index([exportDate])
+  @@index([shipmentDate])
+  @@map("orders_online")
 }
 
 model Analytics {
