@@ -122,6 +122,8 @@ function orderUpdateData(
 async function main() {
   try {
     const csvFilePath = join(process.cwd(), 'table_data', 'orders', 'orders_online.csv')
+    const threeMonthsAgo = new Date()
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
     console.log(
       'Импорт всего orders_online.csv (без отсечения по датам в скрипте — состав файла задаёт источник)...',
     )
@@ -143,11 +145,16 @@ async function main() {
     let skip = 0
     const mapPageSize = 5000
 
-    console.log('Загружаем все существующие записи order в память для сопоставления ключей...')
+    console.log('Загружаем существующие записи order за последние 3 месяца в память для сопоставления ключей...')
 
     while (true) {
       const batch = await prisma.order.findMany({
         select: { id: true, branch: true, orderType: true, orderNumber: true, clientTIN: true },
+        where: {
+          exportDate: {
+            gte: threeMonthsAgo,
+          },
+        },
         skip,
         take: mapPageSize,
       })
@@ -307,6 +314,9 @@ async function main() {
                 orderType: rawOrderType,
                 orderNumber: rawOrderNumber,
                 clientTIN,
+                exportDate: {
+                  gte: threeMonthsAgo,
+                },
               },
               select: { id: true },
             })
