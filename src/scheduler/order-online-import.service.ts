@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import { OrdersOnlineLockService } from './orders-online-lock.service'
 
 const execAsync = promisify(exec)
 
@@ -10,11 +11,18 @@ export class OrderOnlineImportService {
   private readonly logger = new Logger(OrderOnlineImportService.name)
   private isRunning = false
 
+  constructor(private readonly ordersOnlineLockService: OrdersOnlineLockService) {}
+
   // Запускаем каждые 2 часа (в начале часа: 0:00, 2:00, 4:00, …)
   @Cron('0 0 */2 * * *')
   async handleOrderOnlineImport() {
     if (this.isRunning) {
       this.logger.warn('Импорт orders_online уже выполняется, пропускаем...')
+      return
+    }
+
+    const lockOwner = 'OrderOnlineImportService'
+    if (!this.ordersOnlineLockService.tryAcquire(lockOwner)) {
       return
     }
 
@@ -63,6 +71,7 @@ export class OrderOnlineImportService {
       }
     } finally {
       this.isRunning = false
+      this.ordersOnlineLockService.release(lockOwner)
     }
   }
 

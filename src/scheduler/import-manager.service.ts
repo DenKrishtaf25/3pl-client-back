@@ -28,7 +28,7 @@ export class ImportManagerService implements OnModuleInit {
     this.logger.log('ImportManagerService инициализирован. Запуск последовательного импорта...')
     // Запускаем первый цикл импортов после небольшой задержки, чтобы приложение полностью запустилось
     setImmediate(() => {
-      this.runInitialImportsSequence(true)
+      this.runInitialImportsSequence(false)
     })
   }
 

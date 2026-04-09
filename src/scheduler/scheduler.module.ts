@@ -8,6 +8,7 @@ import { AnalyticOrderImportService } from './analytic-order-import.service'
 import { FinanceImportService } from './finance-import.service'
 import { ComplaintsImportService } from './complaints-import.service'
 import { ImportManagerService } from './import-manager.service'
+import { OrdersOnlineLockService } from './orders-online-lock.service'
 
 @Module({
   providers: [
@@ -20,6 +21,7 @@ import { ImportManagerService } from './import-manager.service'
     FinanceImportService,
     ComplaintsImportService,
     ImportManagerService,
+    OrdersOnlineLockService,
   ],
   exports: [
     StockImportService,
@@ -31,6 +33,7 @@ import { ImportManagerService } from './import-manager.service'
     FinanceImportService,
     ComplaintsImportService,
     ImportManagerService,
+    OrdersOnlineLockService,
   ],
 })
 export class SchedulerModule {}

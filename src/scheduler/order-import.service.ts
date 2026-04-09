@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import { OrdersOnlineLockService } from './orders-online-lock.service'
 
 const execAsync = promisify(exec)
 
@@ -9,9 +10,16 @@ export class OrderImportService {
   private readonly logger = new Logger(OrderImportService.name)
   private isRunning = false
 
+  constructor(private readonly ordersOnlineLockService: OrdersOnlineLockService) {}
+
   async handleOrderImport() {
     if (this.isRunning) {
       this.logger.warn('Импорт orders уже выполняется, пропускаем...')
+      return
+    }
+
+    const lockOwner = 'OrderImportService'
+    if (!this.ordersOnlineLockService.tryAcquire(lockOwner)) {
       return
     }
 
@@ -60,6 +68,7 @@ export class OrderImportService {
       }
     } finally {
       this.isRunning = false
+      this.ordersOnlineLockService.release(lockOwner)
       // Планирование следующего импорта теперь управляется ImportManagerService
     }
   }
